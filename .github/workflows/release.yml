@@ -1,0 +1,44 @@
+﻿name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: source
+        run: bun install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: source
+        run: bun run build -- --outDir ../dist --emptyOutDir
+
+      - name: Package release zip
+        run: |
+          mkdir release
+          cp -r dist release/dist
+          cp server.py release/server.py
+          cp README.md release/README.md
+          cd release
+          zip -r "../ttml-tool-${GITHUB_REF_NAME}.zip" .
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ttml-tool-*.zip
+          generate_release_notes: true

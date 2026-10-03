@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TTML 音译时间轴诊断修复工具</title>
+<style>
+:root {
+	--bg:#09090b; --panel:rgba(255,255,255,.028); --line:#26262e; --line2:rgba(255,255,255,.05);
+	--text:#f5f5f7; --muted:#9b9ba6; --faint:#6b6b76;
+	--pink:#fa2c6e; --pink2:#fb5c74; --green:#30d98a; --red:#ff5d5d; --amber:#ffb547; --cyan:#4cc9ff;
+	--mono:"SF Mono",ui-monospace,"Cascadia Code",Consolas,"Sarasa Mono SC","Noto Sans Mono CJK SC",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{color-scheme:dark}
+body{
+	background:var(--bg);color:var(--text);
+	font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+	min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased;
+}
+.blob{position:fixed;border-radius:50%;filter:blur(130px);pointer-events:none;z-index:0}
+.blob.b1{width:540px;height:540px;background:var(--pink);opacity:.13;top:-180px;left:-140px}
+.blob.b2{width:520px;height:520px;background:#5b5bf7;opacity:.10;bottom:-200px;right:-120px}
+.wrap{max-width:1060px;margin:0 auto;padding:44px 20px 60px;position:relative;z-index:1}
+
+header{text-align:center;margin-bottom:32px}
+.logo{display:inline-flex;gap:8px;align-items:center;font-size:12px;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;border:1px solid var(--line);padding:6px 14px;border-radius:999px;background:rgba(255,255,255,.02)}
+h1{font-size:clamp(25px,4vw,38px);font-weight:800;margin:18px 0 10px;letter-spacing:.01em;line-height:1.25;
+	background:linear-gradient(92deg,#fff 30%,#ffc2d2);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sub{color:var(--muted);font-size:13.5px;line-height:1.75;max-width:740px;margin:0 auto}
+.sub code{font-family:var(--mono);font-size:11.5px;background:rgba(255,255,255,.06);padding:2px 7px;border-radius:6px;color:#ffd7e2}
+
+.card{background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.014));border:1px solid var(--line);border-radius:20px;padding:26px;margin-bottom:22px;animation:up .55s cubic-bezier(.2,.7,.3,1) both}
+@keyframes up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.card h2{font-size:16px;display:flex;align-items:center;gap:10px;margin-bottom:18px;font-weight:700}
+.step{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--pink),var(--pink2));display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex:none}
+
+.dropzone{border:2px dashed #36363f;border-radius:16px;padding:42px 20px;text-align:center;cursor:pointer;transition:.22s;background:rgba(255,255,255,.012)}
+.dropzone:hover,.dropzone.drag{border-color:var(--pink2);background:rgba(250,44,110,.07)}
+.dz-icon{font-size:32px;margin-bottom:8px}
+.dz-main{font-size:15px;font-weight:600}
+.dz-sub{color:var(--faint);font-size:12px;margin-top:8px}
+.or{text-align:center;color:var(--faint);font-size:12px;margin:16px 0 0;display:flex;align-items:center;gap:14px}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+summary{cursor:pointer;user-select:none}
+.paste-wrap summary{color:var(--muted);font-size:13px;text-align:center;padding:4px 0}
+.paste-wrap summary:hover{color:var(--text)}
+textarea{width:100%;min-height:150px;background:#0c0c10;color:#dcdce4;border:1px solid var(--line);border-radius:12px;padding:14px;font-family:var(--mono);font-size:12px;resize:vertical;margin:14px 0 12px;line-height:1.6}
+textarea:focus{outline:none;border-color:var(--pink2)}
+.btn{appearance:none;border:0;cursor:pointer;font:inherit;font-size:14px;font-weight:600;padding:11px 22px;border-radius:12px;transition:.18s;display:inline-flex;align-items:center;gap:8px;color:var(--text)}
+.btn.primary{background:linear-gradient(135deg,#fa2c6e,#fb5c74);box-shadow:0 8px 24px -8px rgba(250,44,110,.55)}
+.btn.primary:hover{transform:translateY(-1px);box-shadow:0 12px 30px -8px rgba(250,44,110,.7)}
+.btn.primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+.btn.ghost:hover{color:var(--text);border-color:#4a4a56}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row.center{justify-content:center}
+
+.banner{display:flex;gap:16px;align-items:flex-start;border-radius:16px;padding:18px 20px;margin-bottom:18px;border:1px solid}
+.b-icon{width:38px;height:38px;flex:none;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px}
+.banner h3{font-size:15px;margin-bottom:5px}
+.banner p{color:var(--muted);font-size:13px;line-height:1.7}
+.b-red{background:rgba(255,93,93,.08);border-color:rgba(255,93,93,.35)} .b-red .b-icon{background:rgba(255,93,93,.18)}
+.b-amber{background:rgba(255,181,71,.07);border-color:rgba(255,181,71,.32)} .b-amber .b-icon{background:rgba(255,181,71,.16)}
+.b-green{background:rgba(48,217,138,.07);border-color:rgba(48,217,138,.3)} .b-green .b-icon{background:rgba(48,217,138,.14)}
+.b-gray{background:rgba(255,255,255,.025);border-color:var(--line)} .b-gray .b-icon{background:rgba(255,255,255,.06)}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(152px,1fr));gap:12px;margin-bottom:18px}
+.stat{background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.s-label{font-size:11px;color:var(--faint);letter-spacing:.08em}
+.s-value{font-size:21px;font-weight:800;margin-top:6px;font-family:var(--mono);line-height:1.2}
+.s-sub{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.5}
+.stat.hot .s-value{color:var(--red)} .stat.good .s-value{color:var(--green)} .stat.warnv .s-value{color:var(--amber)} .stat.cy .s-value{color:var(--cyan)}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.chip{font-size:12px;color:var(--muted);border:1px solid var(--line);background:rgba(255,255,255,.02);border-radius:999px;padding:5px 12px}
+.chip b{color:var(--text);font-weight:600}
+.chip code{font-family:var(--mono);color:#ffd7e2;font-size:11px}
+
+.blocktitle{font-size:13px;font-weight:700;color:var(--muted);margin:20px 0 12px;letter-spacing:.04em;display:flex;align-items:center;gap:8px}
+.issues{list-style:none}
+.issues li{color:var(--muted);font-size:13px;line-height:1.85;padding-left:20px;position:relative}
+.issues li::before{content:"•";position:absolute;left:4px;color:var(--faint)}
+.issues li.err{color:#ff9b9b}.issues li.warn{color:#ffd08a}.issues li.info{color:#9b9ba6}
+
+.filterbar{display:flex;align-items:center;gap:10px;margin:4px 0 12px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.filterbar input{accent-color:var(--pink)}
+.line-item{border:1px solid var(--line);border-radius:14px;margin-bottom:10px;background:rgba(255,255,255,.013);overflow:hidden}
+.line-item>summary{padding:13px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px;list-style:none;transition:.15s}
+.line-item>summary::-webkit-details-marker{display:none}
+.line-item>summary:hover{background:rgba(255,255,255,.03)}
+.line-item[open]>summary{border-bottom:1px solid var(--line2)}
+.lid{font-family:var(--mono);color:var(--pink2);font-size:12px;flex:none;min-width:32px}
+.ltext{flex:1;min-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.pill{font-size:11px;font-weight:700;border-radius:999px;padding:3px 10px;flex:none}
+.pill.bad{background:rgba(255,93,93,.15);color:#ff8f8f}
+.pill.ok{background:rgba(48,217,138,.13);color:#7ce8b3}
+.pill.warnp{background:rgba(255,181,71,.14);color:#ffd08a}
+.line-body{padding:2px 10px 14px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px;min-width:640px}
+th{text-align:left;color:var(--faint);font-weight:600;font-size:11px;letter-spacing:.06em;padding:12px 10px 8px;white-space:nowrap}
+td{padding:8px 10px;border-top:1px solid var(--line2);vertical-align:middle;white-space:nowrap}
+td.mono,.mono{font-family:var(--mono)}
+.w{font-weight:700;font-size:13px}
+.r{color:var(--cyan)}
+.dur{color:var(--faint)}
+.tag{font-size:10px;border-radius:6px;padding:2px 8px;font-weight:700;margin-right:4px;display:inline-block}
+.tag.fast{background:rgba(76,201,255,.13);color:#8fdcff}
+.tag.iou{background:rgba(255,181,71,.13);color:#ffd08a}
+.tag.empty{background:rgba(255,93,93,.15);color:#ff9b9b}
+.tag.mis{background:rgba(255,181,71,.13);color:#ffd08a}
+
+.fixgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.fixgrid{grid-template-columns:1fr}}
+.opt{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:rgba(255,255,255,.013)}
+.o-title{font-size:12px;color:var(--faint);margin-bottom:10px;letter-spacing:.06em}
+.opt label{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:10px;font-size:13px;cursor:pointer;color:var(--muted);line-height:1.5}
+.opt label:hover{background:rgba(255,255,255,.03);color:var(--text)}
+.opt input[type=radio]{accent-color:var(--pink);margin-top:3px;flex:none}
+.opt small{display:block;color:var(--faint);font-size:11px;margin-top:2px;line-height:1.55}
+.shift-row{display:flex;gap:12px;align-items:center;margin-top:18px;flex-wrap:wrap}
+.shift-row label{font-size:13px;color:var(--muted)}
+.shift-row input{width:130px;background:#0c0c10;border:1px solid var(--line);color:var(--text);font-family:var(--mono);font-size:14px;padding:10px 12px;border-radius:10px}
+.shift-row input:focus{outline:none;border-color:var(--pink2)}
+.shift-row input:disabled{opacity:.35}
+.hint{font-size:12px;color:var(--muted);line-height:1.65;margin-top:12px}
+.hint b{color:#ffd7e2}
+.hint code{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:5px}
+
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+@media (max-width:760px){.cmp{grid-template-columns:1fr}}
+.cmp .col{border:1px solid var(--line);border-radius:14px;padding:14px;background:rgba(255,255,255,.013)}
+.cmp h4{font-size:12px;margin-bottom:10px;letter-spacing:.06em;color:var(--faint)}
+.cmp .old h4{color:#ff9b9b}.cmp .new h4{color:#7ce8b3}
+.cmprow{display:flex;justify-content:space-between;font-size:13px;padding:7px 0;border-top:1px solid var(--line2)}
+.cmprow:first-of-type{border-top:0}
+.cmprow b{font-family:var(--mono)}
+.old b{color:#ff9b9b}.new b{color:#7ce8b3}
+.code{font-family:var(--mono);font-size:11.5px;line-height:1.85;color:#c9c9d4;word-break:break-all}
+.code .t{color:#8fdcff}.code .v{color:#ffd08a}
+
+details.why{margin-top:18px;border-top:1px solid var(--line2);padding-top:14px}
+details.why summary{font-size:13px;color:var(--cyan)}
+details.why p{color:var(--muted);font-size:12.5px;line-height:1.85;margin-top:10px}
+details.why code{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:5px;color:#ffd7e2}
+
+footer{text-align:center;color:var(--faint);font-size:12px;line-height:2.1;margin-top:26px}
+#toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);background:#1d1d24;border:1px solid #3a3a44;color:var(--text);padding:12px 20px;border-radius:12px;font-size:13px;opacity:0;pointer-events:none;transition:.3s;z-index:99;box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:86vw}
+#toast.show{opacity:1;transform:translateX(-50%)}
+::-webkit-scrollbar{height:8px;width:8px}
+::-webkit-scrollbar-thumb{background:#2e2e38;border-radius:4px}
+::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<div class="blob b1"></div>
+<div class="blob b2"></div>
+<div class="wrap">
+
+<header>
+	<div class="logo">🎵 AMLL / Apple Music TTML</div>
+	<h1>TTML 音译时间轴<br>自动诊断与修复</h1>
+	<p class="sub">自动检测正文歌词与 <code>&lt;transliterations&gt;</code> 音译（罗马音）时间轴的错位，并一键修复逐字音译为空 / 错位配对的问题。<br>匹配判定与 AMLL 官方解析器 <code>alignRomanization</code> 完全一致：±2ms 快速通道 · IoU ≥ 0.1 交并比。</p>
+</header>
+
+<section class="card">
+	<h2><span class="step">1</span>选择 TTML 文件</h2>
+	<div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="选择或拖入 TTML 文件">
+		<div class="dz-icon">📄</div>
+		<div class="dz-main">把 <b>.ttml</b> 文件拖进来，或点击选择</div>
+		<div class="dz-sub">全部在浏览器本地处理，不上传任何内容 · 支持 Apple Music / AMLL 格式</div>
+	</div>
+	<input type="file" id="fileInput" accept=".ttml,.xml,text/xml,application/xml" hidden>
+	<div class="or">或者</div>
+	<details class="paste-wrap" id="pasteWrap">
+		<summary>展开粘贴 TTML 源码</summary>
+		<textarea id="pasteArea" spellcheck="false" placeholder='&lt;tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word" ...&gt;'></textarea>
+		<div class="row center">
+			<button class="btn primary" id="btnAnalyzePaste">分析粘贴内容</button>
+			<button class="btn ghost" id="btnExample">载入问题示例</button>
+			<button class="btn ghost" id="btnClear">清空</button>
+		</div>
+	</details>
+</section>
+
+<section id="reportSection"></section>
+<section id="fixSection"></section>
+<section id="resultSection"></section>
+
+<footer>
+	算法依据 AMLL <code style="font-family:var(--mono)">@applemusic-like-lyrics/ttml</code> 的 alignRomanization（±2ms 快速通道 · IoU ≥ 0.1）<br>
+	行引用支持 itunes:key / xml:id · 时间格式支持 S.mmm / M:S.mmm / H:M:S.mmm / s / ms · 修复只改时间戳，其余内容原样保留
+</footer>
+
+</div>
+<div id="toast"></div>
+<script>
+/* =========================================================
+ * TTML 音译时间轴诊断修复 · 核心引擎（纯函数，无 DOM 依赖）
+ * 算法依据：AMLL @applemusic-like-lyrics/ttml
+ *   - 行引用：正文 itunes:key / xml:id ↔ iTunesMetadata <text for="...">
+ *   - 逐字音译匹配 alignRomanization：
+ *       · 快速通道 |word.begin - roman.begin| ≤ 2ms
+ *       · 否则按时间区间交并比 IoU ≥ 0.1 匹配
+ * ======================================================= */
+const TTML_ENGINE = (function () {
+	"use strict";
+
+	var NS_ITUNES = "http://music.apple.com/lyric-ttml-internal";
+	var NS_XML = "http://www.w3.org/XML/1998/namespace";
+
+	/* ---------------- 时间解析 / 格式化 ---------------- */
+	function parseTimeMs(str) {
+		if (str == null) return null;
+		var s = String(str).trim();
+		if (s === "") return null;
+		var mUnit = s.match(/^(-?[\d.]+)(ms|s|f|t)$/);
+		if (mUnit) {
+			var v = parseFloat(mUnit[1]);
+			if (isNaN(v)) return null;
+			if (mUnit[2] === "ms") return Math.round(v);
+			if (mUnit[2] === "s") return Math.round(v * 1000);
+			return null; // 帧滴 (f/t) 不支持
+		}
+		var parts = s.split(":");
+		if (parts.length < 1 || parts.length > 3) return null;
+		var secs = 0;
+		for (var i = 0; i < parts.length; i++) {
+			var p = parseFloat(parts[i]);
+			if (isNaN(p)) return null;
+			secs = secs * 60 + p;
+		}
+		return Math.round(secs * 1000);
+	}
+
+	function formatTimeMs(ms) {
+		ms = Math.round(ms);
+		if (ms < 0) ms = 0;
+		var totalSec = ms / 1000;
+		if (ms < 60000) return totalSec.toFixed(3);
+		if (ms < 3600000) {
+			var m1 = Math.floor(totalSec / 60);
+			var s1 = totalSec - m1 * 60;
+			return m1 + ":" + s1.toFixed(3).padStart(6, "0");
+		}
+		var h = Math.floor(totalSec / 3600);
+		var m2 = Math.floor((totalSec - h * 3600) / 60);
+		var s2 = totalSec - h * 3600 - m2 * 60;
+		return h + ":" + String(m2).padStart(2, "0") + ":" + s2.toFixed(3).padStart(6, "0");
+	}
+
+	/* ---------------- XML 辅助（命名空间无关） ---------------- */
+	function getAttr(el, nsUri, prefixedName, local) {
+		try {
+			var v = el.getAttributeNS(nsUri, local);
+			if (v != null && v !== "") return v;
+		} catch (e) { /* ignore */ }
+		var v2 = el.getAttribute(prefixedName);
+		return (v2 == null || v2 === "") ? null : v2;
+	}
+
+	function childElements(el, local) {
+		var out = [];
+		for (var i = 0; i < el.childNodes.length; i++) {
+			var c = el.childNodes[i];
+			if (c.nodeType === 1 && c.localName === local) out.push(c);
+		}
+		return out;
+	}
+
+	function descendants(root, local, out) {
+		out = out || [];
+		for (var i = 0; i < root.childNodes.length; i++) {
+			var c = root.childNodes[i];
+			if (c.nodeType === 1) {
+				if (c.localName === local) out.push(c);
+				descendants(c, local, out);
+			}
+		}
+		return out;
+	}
+
+	/* ---------------- AMLL alignRomanization 精确复刻 ---------------- */
+	function alignRomanization(words, romans) {
+		var res = new Array(words.length).fill(null);
+		var searchStart = 0;
+		var MIN_IOU = 0.1;
+		var FAST_TOL = 2;
+		for (var i = 0; i < words.length; i++) {
+			var main = words[i];
+			var maxIou = 0, best = -1, fast = false;
+			var j = searchStart;
+			while (j < romans.length) {
+				var sub = romans[j];
+				if (Math.abs(main.begin - sub.begin) <= FAST_TOL) {
+					res[i] = { roman: sub.text, idx: j, channel: "fast", romanSpan: sub };
+					searchStart = j + 1;
+					fast = true;
+					break;
+				}
+				var overlapStart = Math.max(main.begin, sub.begin);
+				var overlapEnd = Math.min(main.end, sub.end);
+				var intersection = Math.max(0, overlapEnd - overlapStart);
+				if (intersection > 0) {
+					var unionStart = Math.min(main.begin, sub.begin);
+					var unionEnd = Math.max(main.end, sub.end);
+					var unionDuration = Math.max(1, unionEnd - unionStart);
+					var iou = intersection / unionDuration;
+					if (iou > maxIou) { maxIou = iou; best = j; }
+				}
+				if (sub.begin >= main.end) break;
+				j++;
+			}
+			if (!fast && best !== -1 && maxIou >= MIN_IOU) {
+				res[i] = { roman: romans[best].text, idx: best, channel: "iou", romanSpan: romans[best] };
+				searchStart = best + 1;
+			}
+		}
+		return res;
+	}
+
+	/* ---------------- 主分析 ---------------- */
+	function analyze(rawText, DOMParserImpl) {
+		var DP = DOMParserImpl || (typeof DOMParser !== "undefined" ? DOMParser : null);
+		if (!DP) return { ok: false, error: "无可用的 DOMParser 实现" };
+		var doc;
+		try {
+			doc = new DP().parseFromString(rawText, "text/xml");
+		} catch (e) {
+			return { ok: false, error: "XML 解析异常：" + ((e && e.message) || e) };
+		}
+		if (!doc || !doc.documentElement) return { ok: false, error: "XML 解析失败：文档为空" };
+		try {
+			var pe = doc.getElementsByTagName("parsererror");
+			if (pe && pe.length > 0) return { ok: false, error: "XML 格式错误：" + String(pe[0].textContent || "").trim().slice(0, 300) };
+		} catch (e) { /* ignore */ }
+		if (doc.documentElement.localName === "parsererror") {
+			return { ok: false, error: "XML 格式错误：" + String(doc.documentElement.textContent || "").trim().slice(0, 300) };
+		}
+
+		var root = doc.documentElement;
+		var issues = [];
+		if (root.localName !== "tt") issues.push({ level: "info", msg: "根节点不是 <tt>（当前为 <" + root.localName + ">），仍尝试继续分析" });
+
+		var bodyList = descendants(root, "body");
+		if (!bodyList.length) return { ok: false, error: "未找到 <body> 区域" };
+
+		var timing = getAttr(root, NS_ITUNES, "itunes:timing", "timing");
+		var docLang = getAttr(root, NS_XML, "xml:lang", "lang");
+
+		/* --- 正文行 --- */
+		var pEls = descendants(bodyList[0], "p");
+		var lines = [];
+		var lineMap = new Map();
+		var unkeyedCount = 0;
+		var wordCount = 0;
+		var badWordTime = 0;
+		for (var pi = 0; pi < pEls.length; pi++) {
+			var p = pEls[pi];
+			var id = getAttr(p, NS_ITUNES, "itunes:key", "key") || getAttr(p, NS_XML, "xml:id", "id");
+			var words = [];
+			var spans = childElements(p, "span");
+			for (var si = 0; si < spans.length; si++) {
+				var sp = spans[si];
+				var wb = parseTimeMs(sp.getAttribute("begin"));
+				var we = parseTimeMs(sp.getAttribute("end"));
+				if (wb == null || we == null) badWordTime++;
+				words.push({ begin: wb, end: we, text: String(sp.textContent || "") });
+			}
+			wordCount += words.length;
+			if (!id) { unkeyedCount++; lines.push({ id: null, begin: parseTimeMs(p.getAttribute("begin")), end: parseTimeMs(p.getAttribute("end")), words: words, text: words.map(function (w) { return w.text; }).join("") }); continue; }
+			if (lineMap.has(id)) issues.push({ level: "warn", msg: "行标识 " + id + " 重复出现，后者覆盖前者" });
+			var line = { id: id, begin: parseTimeMs(p.getAttribute("begin")), end: parseTimeMs(p.getAttribute("end")), words: words, text: words.map(function (w) { return w.text; }).join("") };
+			lines.push(line);
+			lineMap.set(id, line);
+		}
+
+		/* --- 音译 / 元数据 --- */
+		var imEls = descendants(root, "iTunesMetadata");
+		var leadingSilenceMs = imEls.length ? parseTimeMs(imEls[0].getAttribute("leadingSilence")) : null;
+		var translitEls = descendants(root, "transliteration");
+		var translitList = [];
+		var translitTextCount = 0;
+		for (var ti = 0; ti < translitEls.length; ti++) {
+			var trEl = translitEls[ti];
+			var lang = getAttr(trEl, NS_XML, "xml:lang", "lang") || "(未知语言)";
+			var texts = new Map();
+			var lineLevel = new Map();
+			var dupFor = [];
+			var textEls = childElements(trEl, "text");
+			for (var xi = 0; xi < textEls.length; xi++) {
+				var textEl = textEls[xi];
+				var forId = textEl.getAttribute("for");
+				if (forId == null || forId === "") { issues.push({ level: "warn", msg: "[" + lang + "] 有 <text> 缺少 for 属性，已忽略" }); continue; }
+				var rSpans = [];
+				var rSpanEls = childElements(textEl, "span");
+				for (var ri = 0; ri < rSpanEls.length; ri++) {
+					var rs = rSpanEls[ri];
+					var rb = parseTimeMs(rs.getAttribute("begin"));
+					var re = parseTimeMs(rs.getAttribute("end"));
+					rSpans.push({ begin: rb, end: re, text: String(rs.textContent || "") });
+				}
+				if (texts.has(forId)) dupFor.push(forId);
+				if (rSpans.length) { texts.set(forId, rSpans); translitTextCount++; }
+				else lineLevel.set(forId, String(textEl.textContent || "").trim());
+			}
+			translitList.push({ lang: lang, auto: trEl.getAttribute("automaticallyCreated"), texts: texts, lineLevel: lineLevel, dupFor: dupFor });
+		}
+
+		/* --- 未解析时间 / 坏引用 --- */
+		if (badWordTime > 0) issues.push({ level: "warn", msg: "正文中有 " + badWordTime + " 个逐字 span 的时间属性无法解析" });
+		for (var li = 0; li < translitList.length; li++) {
+			var trl = translitList[li];
+			if (trl.dupFor.length) issues.push({ level: "warn", msg: "[" + trl.lang + "] 存在重复的 for 引用：" + trl.dupFor.join(", ") });
+			var forIds = [];
+			trl.texts.forEach(function (v, k) { forIds.push(k); });
+			var badRefs = [];
+			for (var fi = 0; fi < forIds.length; fi++) {
+				if (!lineMap.has(forIds[fi])) badRefs.push(forIds[fi]);
+			}
+			if (badRefs.length && lineMap.size) issues.push({ level: "warn", msg: "[" + trl.lang + "] 音译引用了不存在的行：" + badRefs.slice(0, 8).join(", ") + (badRefs.length > 8 ? " 等" : "") });
+		}
+		if (unkeyedCount > 0 && translitList.length) issues.push({ level: "warn", msg: "有 " + unkeyedCount + " 行缺少 itunes:key / xml:id，无法关联音译" });
+
+		/* --- 时间轴偏移检测 --- */
+		var offset = detectOffset(lines, translitList);
+		if (offset) {
+			if (offset.mode !== 0) {
+				var lsNote = "";
+				if (leadingSilenceMs != null && Math.abs(offset.mode - leadingSilenceMs) < 1) lsNote = "，与 leadingSilence=" + (leadingSilenceMs / 1000) + "s 完全一致（典型病因：转换工具只对一侧时间轴做了静音偏移修正）";
+				issues.push({ level: "warn", msg: "音译时间轴整体比正文" + (offset.mode > 0 ? "晚" : "早") + " " + Math.abs(offset.mode) + "ms（一致性 " + (offset.uniformity * 100).toFixed(1) + "%，" + offset.modeCount + "/" + offset.totalDiffs + " 个时间戳" + lsNote + "）" });
+			}
+			for (var cmi = 0; cmi < offset.countMismatch.length && cmi < 8; cmi++) {
+				var cm = offset.countMismatch[cmi];
+				issues.push({ level: "warn", msg: "[" + cm.lang + "] " + cm.id + " 逐字数(" + cm.words + ")与音译 span 数(" + cm.spans + ")不一致" });
+			}
+			for (var bti = 0; bti < offset.badTime.length && bti < 8; bti++) {
+				issues.push({ level: "warn", msg: "[" + offset.badTime[bti].lang + "] " + offset.badTime[bti].id + " 含无法解析的时间格式，跳过对齐检测" });
+			}
+		}
+
+		/* --- AMLL 匹配模拟 --- */
+		var match = simulateMatch(lines, translitList);
+		if (match && match.overall.empty > 0) issues.push({ level: "warn", msg: "按 AMLL 匹配规则，" + match.overall.empty + "/" + match.overall.total + " 个逐字单元的音译会为空（时间轴错位且时长不足导致 IoU < 0.1）" });
+		if (match && match.overall.mispaired > 0) issues.push({ level: "warn", msg: match.overall.mispaired + " 个逐字单元疑似匹配到了错误的音译片段（错位配对，会显示成别的字的读音）" });
+		if (wordCount === 0 && lines.length > 0) issues.push({ level: "info", msg: "正文没有逐字 span（行级时间），逐字音译对齐检查不适用" });
+
+		var coveredIds = new Set();
+		for (var kli = 0; kli < translitList.length; kli++) translitList[kli].texts.forEach(function (v, k) { coveredIds.add(k); });
+
+		return {
+			ok: true,
+			timing: timing,
+			docLang: docLang,
+			leadingSilenceMs: leadingSilenceMs,
+			stats: {
+				lineCount: lines.length,
+				wordCount: wordCount,
+				translitLangCount: translitList.length,
+				translitTextCount: translitTextCount,
+				coveredLines: coveredIds.size,
+			},
+			lines: lines,
+			lineMap: lineMap,
+			translit: { list: translitList },
+			offset: offset,
+			match: match,
+			issues: issues,
+		};
+	}
+
+	function detectOffset(lines, translitList) {
+		var diffs = [];
+		var pairLines = 0;
+		var countMismatch = [];
+		var badTime = [];
+		var hasAny = false;
+		for (var ti = 0; ti < translitList.length; ti++) {
+			var tr = translitList[ti];
+			for (var li = 0; li < lines.length; li++) {
+				var line = lines[li];
+				if (!line.id) continue;
+				var spans = tr.texts.get(line.id);
+				if (!spans) continue;
+				if (!line.words.length || !spans.length) continue;
+				hasAny = true;
+				var wBad = line.words.some(function (w) { return w.begin == null || w.end == null; });
+				var sBad = spans.some(function (s) { return s.begin == null || s.end == null; });
+				if (wBad || sBad) { badTime.push({ lang: tr.lang, id: line.id }); continue; }
+				if (spans.length !== line.words.length) { countMismatch.push({ lang: tr.lang, id: line.id, words: line.words.length, spans: spans.length }); continue; }
+				pairLines++;
+				for (var i = 0; i < spans.length; i++) {
+					diffs.push(spans[i].begin - line.words[i].begin);
+					diffs.push(spans[i].end - line.words[i].end);
+				}
+			}
+		}
+		if (!hasAny) return null;
+		if (!diffs.length) return { mode: null, modeCount: 0, totalDiffs: 0, uniformity: 0, pairLines: pairLines, countMismatch: countMismatch, badTime: badTime };
+		var counter = new Map();
+		for (var di = 0; di < diffs.length; di++) counter.set(diffs[di], (counter.get(diffs[di]) || 0) + 1);
+		var keys = Array.from(counter.keys()).sort(function (a, b) { return (Math.abs(a) - Math.abs(b)) || (a - b); });
+		var mode = 0, modeCount = 0;
+		for (var ki = 0; ki < keys.length; ki++) {
+			if (counter.get(keys[ki]) > modeCount) { mode = keys[ki]; modeCount = counter.get(keys[ki]); }
+		}
+		return { mode: mode, modeCount: modeCount, totalDiffs: diffs.length, uniformity: modeCount / diffs.length, pairLines: pairLines, countMismatch: countMismatch, badTime: badTime };
+	}
+
+	function simulateMatch(lines, translitList) {
+		if (!translitList.length) return null;
+		var langs = [];
+		var overall = { total: 0, matched: 0, empty: 0, fast: 0, mispaired: 0, affectedLineIds: new Set() };
+		for (var ti = 0; ti < translitList.length; ti++) {
+			var tr = translitList[ti];
+			var perLine = [];
+			var agg = { total: 0, matched: 0, empty: 0, fast: 0, mispaired: 0 };
+			for (var li = 0; li < lines.length; li++) {
+				var line = lines[li];
+				if (!line.id) continue;
+				var spans = tr.texts.get(line.id);
+				if (!spans || !spans.length) continue;
+				var words = line.words;
+				if (!words.length) continue;
+				var wBad = words.some(function (w) { return w.begin == null || w.end == null; });
+				var sBad = spans.some(function (s) { return s.begin == null || s.end == null; });
+				if (wBad || sBad) {
+					perLine.push({ id: line.id, lineText: line.text, lang: tr.lang, units: null, matched: 0, empty: 0, mispaired: 0, note: "含无法解析的时间格式" });
+					continue;
+				}
+				var matchedArr = alignRomanization(words, spans);
+				var sameCount = spans.length === words.length;
+				var units = [];
+				var lineEmpty = 0, lineMis = 0, lineMatched = 0;
+				for (var i = 0; i < words.length; i++) {
+					var w = words[i];
+					var m = matchedArr[i];
+					var cand = spans[Math.min(i, spans.length - 1)];
+					var unit = {
+						word: w.text, wordBegin: w.begin, wordEnd: w.end, dur: w.end - w.begin,
+						roman: m ? m.roman : null, romanIdx: m ? m.idx : null, channel: m ? m.channel : null,
+						romanBegin: m ? m.romanSpan.begin : null, romanEnd: m ? m.romanSpan.end : null,
+						candText: cand ? cand.text : null, candBegin: cand ? cand.begin : null, candEnd: cand ? cand.end : null,
+						candDiff: cand ? (cand.begin - w.begin) : null,
+					};
+					if (m) {
+						lineMatched++;
+						if (m.channel === "fast") agg.fast++;
+						if (sameCount && m.idx !== i) { lineMis++; unit.mispaired = true; }
+					} else {
+						lineEmpty++;
+					}
+					units.push(unit);
+				}
+				agg.total += words.length;
+				agg.matched += lineMatched;
+				agg.empty += lineEmpty;
+				agg.mispaired += lineMis;
+				if (lineEmpty > 0 || lineMis > 0) overall.affectedLineIds.add(line.id);
+				perLine.push({ id: line.id, lineText: line.text, lang: tr.lang, units: units, matched: lineMatched, empty: lineEmpty, mispaired: lineMis, spanCount: spans.length });
+			}
+			langs.push({ lang: tr.lang, perLine: perLine, total: agg.total, matched: agg.matched, empty: agg.empty, fast: agg.fast, mispaired: agg.mispaired });
+			overall.total += agg.total;
+			overall.matched += agg.matched;
+			overall.empty += agg.empty;
+			overall.fast += agg.fast;
+			overall.mispaired += agg.mispaired;
+		}
+		overall.affectedLineCount = overall.affectedLineIds.size;
+		return { langs: langs, overall: overall };
+	}
+
+	/* ---------------- 修复：统一偏移（音译侧） ---------------- */
+	function fixTranslit(rawText, shiftMs) {
+		var open = rawText.search(/<transliterations(?=[\s/>])/);
+		if (open === -1) return { ok: false, error: "未找到 <transliterations> 区域" };
+		var close = rawText.indexOf("</transliterations>", open);
+		if (close === -1) return { ok: false, error: "音译区域未正确闭合（自闭合标签则没有可修复内容）" };
+		var zone = rawText.slice(open, close);
+		if (/^<transliterations\s*\/\s*>/.test(zone)) return { ok: false, error: "音译区域为空，无需修复" };
+		var touched = 0, clamped = 0, skipped = 0;
+		var fixedZone = zone.replace(/<span\s+begin="([^"]*)"\s+end="([^"]*)"/g, function (m, b, e) {
+			var bms = parseTimeMs(b), ems = parseTimeMs(e);
+			if (bms == null || ems == null) { skipped++; return m; }
+			var nb = bms + shiftMs, ne = ems + shiftMs;
+			if (nb < 0) { nb = 0; clamped++; }
+			if (ne < 0) { ne = 0; clamped++; }
+			touched++;
+			return '<span begin="' + formatTimeMs(nb) + '" end="' + formatTimeMs(ne) + '"';
+		});
+		if (!touched) return { ok: false, error: "音译区域内没有可修复的逐字 span" };
+		return { ok: true, text: rawText.slice(0, open) + fixedZone + rawText.slice(close), touched: touched, clamped: clamped, skipped: skipped };
+	}
+
+	/* ---------------- 修复：统一偏移（正文侧） ---------------- */
+	function fixBody(rawText, shiftMs) {
+		var m = rawText.match(/<body(?=[\s/>])/);
+		if (!m) return { ok: false, error: "未找到 <body> 区域" };
+		var start = rawText.indexOf(m[0]);
+		var zone = rawText.slice(start);
+		var touched = 0, clamped = 0;
+		var fixedZone = zone.replace(/((?:begin|end|dur)\s*=\s*")([^"]*)(")/g, function (mm, pre, val, post) {
+			var ms = parseTimeMs(val);
+			if (ms == null) return mm;
+			var n = ms + shiftMs;
+			if (n < 0) { n = 0; clamped++; }
+			touched++;
+			return pre + formatTimeMs(n) + post;
+		});
+		if (!touched) return { ok: false, error: "正文区域没有可调整的时间属性" };
+		return { ok: true, text: rawText.slice(0, start) + fixedZone, touched: touched, clamped: clamped };
+	}
+
+	/* ---------------- 修复：按索引强制对齐（音译时间 := 逐字时间） ---------------- */
+	function fixForceIndex(rawText, analysis) {
+		if (!analysis || !analysis.ok || !analysis.lineMap) return { ok: false, error: "缺少分析结果，无法执行强制对齐" };
+		var open = rawText.search(/<transliterations(?=[\s/>])/);
+		if (open === -1) return { ok: false, error: "未找到 <transliterations> 区域" };
+		var close = rawText.indexOf("</transliterations>", open);
+		if (close === -1) return { ok: false, error: "音译区域未正确闭合" };
+		var zone = rawText.slice(open, close);
+		var lineMap = analysis.lineMap;
+		var fixedSpans = 0, skippedTexts = 0;
+		var fixedZone = zone.replace(/(<text\s+for="([^"]*)"[^>]*>)([\s\S]*?)(<\/text\s*>)/g, function (m, openTag, forId, body, closeTag) {
+			var line = lineMap.get(forId);
+			if (!line || !line.words.length) { skippedTexts++; return m; }
+			var spanRe = /<span\s+begin="[^"]*"\s+end="[^"]*"/g;
+			var spanCount = (body.match(spanRe) || []).length;
+			if (spanCount !== line.words.length) { skippedTexts++; return m; }
+			var idx = 0;
+			var newBody = body.replace(/<span\s+begin="([^"]*)"\s+end="([^"]*)"/g, function (sm, b, e) {
+				var w = line.words[idx++];
+				if (w.begin == null || w.end == null) return sm;
+				fixedSpans++;
+				return '<span begin="' + formatTimeMs(w.begin) + '" end="' + formatTimeMs(w.end) + '"';
+			});
+			return openTag + newBody + closeTag;
+		});
+		if (!fixedSpans) return { ok: false, error: "没有可强制对齐的行（逐字数与音译 span 数都不一致？）" };
+		return { ok: true, text: rawText.slice(0, open) + fixedZone + rawText.slice(close), fixedSpans: fixedSpans, skippedTexts: skippedTexts };
+	}
+
+	return {
+		parseTimeMs: parseTimeMs,
+		formatTimeMs: formatTimeMs,
+		analyze: analyze,
+		fixTranslit: fixTranslit,
+		fixBody: fixBody,
+		fixForceIndex: fixForceIndex,
+	};
+})();
+
+/* 内置问题示例（音译整体 +500ms，leadingSilence 0.5s） */
+const SAMPLE_TTML = '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word" xml:lang="zh-Hant"><head><metadata><iTunesMetadata xmlns="http://music.apple.com/lyric-ttml-internal" leadingSilence="0.500"><transliterations><transliteration automaticallyCreated="true" xml:lang="zh-Latn-jyutping"><text for="L1"><span begin="2.750" end="3.010" xmlns="http://www.w3.org/ns/ttml">wong</span> <span begin="3.010" end="3.675" xmlns="http://www.w3.org/ns/ttml">hau daai dou</span> <span begin="3.675" end="4.135" xmlns="http://www.w3.org/ns/ttml">sai</span></text><text for="L2"><span begin="4.500" end="4.900" xmlns="http://www.w3.org/ns/ttml">mou</span> <span begin="4.900" end="5.700" xmlns="http://www.w3.org/ns/ttml">wong gung</span> <span begin="5.700" end="6.100" xmlns="http://www.w3.org/ns/ttml">ho</span> <span begin="6.100" end="6.700" xmlns="http://www.w3.org/ns/ttml">ho bit neoi wong</span> <span begin="6.700" end="7.000" xmlns="http://www.w3.org/ns/ttml">hau</span></text></transliteration></transliterations></iTunesMetadata></metadata></head><body dur="8.000"><div itunes:songPart="Verse"><p begin="2.250" end="3.635" itunes:key="L1"><span begin="2.250" end="2.510">皇后</span><span begin="2.510" end="3.175">大道</span><span begin="3.175" end="3.635">西</span></p><p begin="4.000" end="6.500" itunes:key="L2"><span begin="4.000" end="4.400">無</span><span begin="4.400" end="5.200">皇宮</span><span begin="5.200" end="5.600">何</span><span begin="5.600" end="6.200">必女皇</span><span begin="6.200" end="6.500">後</span></p></div></body></tt>';
+
+if (typeof module !== "undefined" && module.exports) {
+	module.exports = { TTML_ENGINE: TTML_ENGINE, SAMPLE_TTML: SAMPLE_TTML };
+}
+
+/* =========================================================
+ * TTML 音译时间轴诊断修复 · UI 交互
+ * ======================================================= */
+(function () {
+        "use strict";
+        var E = TTML_ENGINE;
+        function $(s) { return document.querySelector(s); }
+        function esc(s) {
+                return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+                        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+                });
+        }
+        function fmtSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : (n / 1024).toFixed(1) + " KB"; }
+        function signed(n) { return (n > 0 ? "+" : "") + n; }
+
+        var state = { raw: null, name: null, analysis: null, fixed: null };
+
+        var toastTimer = null;
+        function toast(msg) {
+                var t = $("#toast");
+                t.textContent = msg;
+                t.classList.add("show");
+                clearTimeout(toastTimer);
+                toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2600);
+        }
+
+        /* ================= 输入 ================= */
+        function wireInput() {
+                var dz = $("#dropzone"), fi = $("#fileInput");
+                dz.addEventListener("click", function () { fi.click(); });
+                dz.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fi.click(); } });
+                ["dragenter", "dragover"].forEach(function (ev) {
+                        dz.addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); dz.classList.add("drag"); });
+                });
+                ["dragleave", "drop"].forEach(function (ev) {
+                        dz.addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); dz.classList.remove("drag"); });
+                });
+                dz.addEventListener("drop", function (e) {
+                        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                        if (f) handleFile(f);
+                        else {
+                                var txt = e.dataTransfer && e.dataTransfer.getData("text");
+                                if (txt && txt.trim()) loadText(txt, null);
+                        }
+                });
+                fi.addEventListener("change", function () { if (fi.files && fi.files[0]) handleFile(fi.files[0]); fi.value = ""; });
+                $("#btnAnalyzePaste").addEventListener("click", function () {
+                        var t = $("#pasteArea").value;
+                        if (!t.trim()) { toast("请先粘贴 TTML 源码"); return; }
+                        loadText(t, null);
+                });
+                $("#btnExample").addEventListener("click", function () {
+                        $("#pasteArea").value = SAMPLE_TTML;
+                        loadText(SAMPLE_TTML, "示例_皇后大道西.ttml");
+                });
+                $("#btnClear").addEventListener("click", function () {
+                        $("#pasteArea").value = "";
+                        $("#pasteWrap").removeAttribute("open");
+                });
+        }
+
+        function handleFile(f) {
+                var reader = new FileReader();
+                reader.onload = function () { loadText(String(reader.result || ""), f.name); };
+                reader.onerror = function () { toast("文件读取失败"); };
+                reader.readAsText(f);
+        }
+
+        function loadText(text, name) {
+                state.raw = text;
+                state.name = name;
+                state.fixed = null;
+                toast("已载入 " + (name || "粘贴内容") + "（" + fmtSize(text.length) + "），开始分析…");
+                runAnalyze();
+        }
+
+        /* ================= 分析 ================= */
+        function runAnalyze() {
+                $("#resultSection").innerHTML = "";
+                var a;
+                try { a = E.analyze(state.raw, window.DOMParser); }
+                catch (err) { a = { ok: false, error: "分析异常：" + ((err && err.message) || err) }; }
+                state.analysis = a;
+                renderReport(a);
+                renderFixPanel(a);
+        }
+
+        function bannerHtml(kind, icon, title, body) {
+                return '<div class="banner ' + kind + '"><div class="b-icon">' + icon + '</div><div><h3>' + title + "</h3><p>" + body + "</p></div></div>";
+        }
+
+        function renderReport(a) {
+                var R = $("#reportSection");
+                if (!a.ok) {
+                        R.innerHTML = '<section class="card">' +
+                                bannerHtml("b-red", "⚠️", "TTML 解析失败", esc(a.error || "未知错误") + "<br>请检查文件是否为合法 XML（常见原因：标签未闭合、被截断、复制不完整）。") +
+                                "</section>";
+                        return;
+                }
+
+                var html = '<section class="card"><h2><span class="step">2</span>诊断报告</h2>';
+                var st = a.stats;
+                var m = a.match && a.match.overall;
+
+                /* --- 横幅 --- */
+                if (st.translitLangCount === 0) {
+                        html += bannerHtml("b-gray", "💤", "未检测到音译内容",
+                                "该文件没有 <b>&lt;transliterations&gt;</b> 区域（逐字音译/罗马音）。<br>本工具针对的是带音译的 Apple Music / AMLL TTML；如果你确定文件里有音译，请检查是否在 &lt;iTunesMetadata&gt; 内。");
+                } else if (st.wordCount === 0) {
+                        html += bannerHtml("b-gray", "ℹ️", "这是行级时间歌词",
+                                "正文没有逐字 &lt;span&gt;（itunes:timing=\"Line\"），逐字音译对齐检查不适用。");
+                } else if (m && (m.empty > 0 || m.mispaired > 0) || (a.offset && a.offset.mode !== 0)) {
+                        var offDesc = a.offset && a.offset.mode != null
+                                ? "音译时间轴整体比正文<b>" + (a.offset.mode > 0 ? "晚" : "早") + " " + Math.abs(a.offset.mode) + "ms</b>（" + (a.offset.uniformity * 100).toFixed(1) + "% 一致，" + a.offset.modeCount + "/" + a.offset.totalDiffs + " 个时间戳）"
+                                : "音译与正文时间轴存在非统一错位";
+                        var lsDesc = (a.leadingSilenceMs != null && a.offset && a.offset.mode != null && Math.abs(a.offset.mode - a.leadingSilenceMs) < 1)
+                                ? "错位量与 <b>leadingSilence=" + (a.leadingSilenceMs / 1000) + "s</b> 完全一致 → 典型病因：转换工具只修正了一侧时间轴。" : "";
+                        html += bannerHtml("b-amber", "🩺", "检测到问题：音译时间轴错位",
+                                offDesc + "。" + lsDesc + "<br>按 AMLL 匹配规则：<b>" + (m ? m.empty : "?") + "</b> 个逐字单元音译会<b>为空</b>" +
+                                (m && m.mispaired > 0 ? "，另有 <b>" + m.mispaired + "</b> 个<b>错位配对</b>（显示成别的字的读音）" : "") +
+                                (m ? "，涉及 <b>" + m.affectedLineCount + "/" + st.lineCount + "</b> 行。" : "。"));
+                } else {
+                        html += bannerHtml("b-green", "✅", "全部检查通过",
+                                "音译时间轴与正文逐字时间<b>完全对齐</b>" + (m ? "，" + m.fast + "/" + m.total + " 个逐字单元可走 ±2ms 快速通道直接匹配。" : "。") + "无需修复。");
+                }
+
+                /* --- 元信息 chips --- */
+                var chips = '<div class="chips">';
+                if (state.name) chips += '<span class="chip">来源 <b>' + esc(state.name) + "</b>（" + fmtSize(state.raw.length) + "）</span>";
+                if (a.timing) chips += '<span class="chip">时间粒度 <code>' + esc(a.timing) + "</code></span>";
+                if (a.docLang) chips += '<span class="chip">歌词语言 <code>' + esc(a.docLang) + "</code></span>";
+                var langNames = [];
+                if (a.translit) for (var i = 0; i < a.translit.list.length; i++) langNames.push(esc(a.translit.list[i].lang));
+                if (langNames.length) chips += '<span class="chip">音译语言 <code>' + langNames.join(" · ") + "</code></span>";
+                if (a.leadingSilenceMs != null) chips += '<span class="chip">leadingSilence <b>' + (a.leadingSilenceMs / 1000) + "s</b></span>";
+                chips += "</div>";
+                html += chips;
+
+                /* --- 统计卡 --- */
+                html += '<div class="stats">';
+                html += '<div class="stat"><div class="s-label">歌词行</div><div class="s-value">' + st.lineCount + '</div><div class="s-sub">正文 &lt;p&gt; 行数</div></div>';
+                html += '<div class="stat"><div class="s-label">逐字单元</div><div class="s-value">' + st.wordCount + '</div><div class="s-sub">正文逐字 span 总数</div></div>';
+                html += '<div class="stat cy"><div class="s-label">音译覆盖</div><div class="s-value">' + st.coveredLines + "/" + st.lineCount + '</div><div class="s-sub">' + st.translitTextCount + " 个 &lt;text&gt; 区块</div></div>";
+                if (a.offset && a.offset.mode != null) {
+                        var offCls = a.offset.mode === 0 ? "good" : "warnv";
+                        html += '<div class="stat ' + offCls + '"><div class="s-label">时间轴偏移</div><div class="s-value">' + signed(a.offset.mode) + 'ms</div><div class="s-sub">' + (a.offset.uniformity * 100).toFixed(1) + "% 一致（" + a.offset.modeCount + "/" + a.offset.totalDiffs + " 时间戳）</div></div>";
+                }
+                if (m) {
+                        html += '<div class="stat ' + (m.empty ? "hot" : "good") + '"><div class="s-label">音译为空的字</div><div class="s-value">' + m.empty + '</div><div class="s-sub">涉及 ' + m.affectedLineCount + " 行 · 播放时无逐字音译</div></div>";
+                        html += '<div class="stat ' + (m.mispaired ? "warnv" : "good") + '"><div class="s-label">错位配对</div><div class="s-value">' + m.mispaired + '</div><div class="s-sub">显示了错误读音的字</div></div>';
+                }
+                html += "</div>";
+
+                /* --- 问题列表 --- */
+                if (a.issues && a.issues.length) {
+                        html += '<div class="blocktitle">📌 其他发现</div><ul class="issues">';
+                        for (var j = 0; j < a.issues.length; j++) {
+                                html += '<li class="' + esc(a.issues[j].level) + '">' + esc(a.issues[j].msg) + "</li>";
+                        }
+                        html += "</ul>";
+                }
+
+                /* --- 逐行明细 --- */
+                if (a.match && a.match.langs.length) {
+                        html += '<div class="blocktitle">🔬 逐字对齐明细（AMLL 匹配模拟）</div>';
+                        html += '<div class="filterbar"><label><input type="checkbox" id="onlyBad"> 只显示有问题的行</label><span id="lineCountInfo" style="color:var(--faint);font-size:12px"></span></div>';
+                        var opened = 0;
+                        for (var li2 = 0; li2 < a.match.langs.length; li2++) {
+                                var lg = a.match.langs[li2];
+                                if (a.match.langs.length > 1) html += '<div class="filterbar" style="margin-top:6px"><span class="chip">音译语言：<b>' + esc(lg.lang) + "</b></span></div>";
+                                for (var k = 0; k < lg.perLine.length; k++) {
+                                        var pl = lg.perLine[k];
+                                        var bad = pl.empty > 0 || pl.mispaired > 0;
+                                        var isOpen = bad && opened < 3;
+                                        if (bad) opened++;
+                                        html += '<details class="line-item' + (bad ? "" : " ok-line") + '"' + (isOpen ? " open" : "") + ">";
+                                        html += "<summary>";
+                                        html += '<span class="lid">' + esc(pl.id) + "</span>";
+                                        html += '<span class="ltext">' + esc(pl.lineText || "") + "</span>";
+                                        if (pl.units) {
+                                                if (pl.empty > 0) html += '<span class="pill bad">' + pl.empty + " 字音译为空</span>";
+                                                if (pl.mispaired > 0) html += '<span class="pill warnp">' + pl.mispaired + " 错位配对</span>";
+                                                if (pl.empty === 0 && pl.mispaired === 0) html += '<span class="pill ok">' + pl.matched + "/" + pl.matched + " 对齐</span>";
+                                        } else {
+                                                html += '<span class="pill warnp">无法解析时间</span>';
+                                        }
+                                        html += "</summary>";
+                                        if (pl.units) html += renderUnitTable(pl.units);
+                                        html += "</details>";
+                                }
+                        }
+                }
+                html += "</section>";
+                R.innerHTML = html;
+
+                var ob = $("#onlyBad");
+                if (ob) ob.addEventListener("change", function () {
+                        var items = R.querySelectorAll(".line-item.ok-line");
+                        for (var x = 0; x < items.length; x++) items[x].style.display = ob.checked ? "none" : "";
+                        var info = $("#lineCountInfo");
+                        if (info) {
+                                var total = R.querySelectorAll(".line-item").length;
+                                var badn = total - items.length;
+                                info.textContent = ob.checked ? "显示 " + badn + " 个问题行 / 共 " + total + " 行" : "共 " + total + " 行（含 " + badn + " 个问题行）";
+                        }
+                });
+                var info0 = $("#lineCountInfo");
+                if (info0) {
+                        var total0 = R.querySelectorAll(".line-item").length;
+                        var badn0 = R.querySelectorAll(".line-item:not(.ok-line)").length;
+                        info0.textContent = "共 " + total0 + " 行（含 " + badn0 + " 个问题行）";
+                }
+        }
+
+        function renderUnitTable(units) {
+                var h = '<div class="line-body"><table><thead><tr>' +
+                        "<th>#</th><th>字 / 词</th><th>正文时间</th><th>时长</th><th>音译(按序对应)</th><th>音译时间</th><th>偏差</th><th>匹配结果</th>" +
+                        "</tr></thead><tbody>";
+                for (var i = 0; i < units.length; i++) {
+                        var u = units[i];
+                        var candDiff = u.candDiff != null ? signed(u.candDiff) + "ms" : "—";
+                        var res;
+                        if (u.mispaired) res = '<span class="tag mis">⚠ 错位配对</span><span class="tag iou">→ #' + u.romanIdx + "『" + esc(u.roman) + "』</span>";
+                        else if (u.channel === "fast") res = '<span class="tag fast">✓ 快速通道</span>';
+                        else if (u.channel === "iou") res = '<span class="tag iou">✓ IoU 匹配</span>';
+                        else res = '<span class="tag empty">✗ 音译为空</span>';
+                        h += "<tr>";
+                        h += '<td class="mono" style="color:var(--faint)">' + (i + 1) + "</td>";
+                        h += '<td><span class="w">' + esc(u.word) + "</span></td>";
+                        h += '<td class="mono">' + (u.wordBegin != null ? E.formatTimeMs(u.wordBegin) : "?") + " ~ " + (u.wordEnd != null ? E.formatTimeMs(u.wordEnd) : "?") + "</td>";
+                        h += '<td class="mono dur">' + u.dur + "ms</td>";
+                        h += '<td><span class="r">' + esc(u.candText || "—") + "</span></td>";
+                        h += '<td class="mono">' + (u.candBegin != null ? E.formatTimeMs(u.candBegin) : "?") + " ~ " + (u.candEnd != null ? E.formatTimeMs(u.candEnd) : "?") + "</td>";
+                        h += '<td class="mono"' + (u.candDiff ? ' style="color:var(--amber)"' : "") + ">" + candDiff + "</td>";
+                        h += "<td>" + res + "</td>";
+                        h += "</tr>";
+                }
+                h += "</tbody></table></div>";
+                return h;
+        }
+
+        /* ================= 修复面板 ================= */
+        function renderFixPanel(a) {
+                var F = $("#fixSection");
+                if (!a.ok || !a.stats || a.stats.translitLangCount === 0 || a.stats.wordCount === 0) { F.innerHTML = ""; return; }
+                var mode = a.offset && a.offset.mode != null ? a.offset.mode : 0;
+                var clean = mode === 0 && a.match && a.match.overall.empty === 0 && a.match.overall.mispaired === 0;
+
+                var h = '<section class="card"><h2><span class="step">3</span>自动修复</h2>';
+                if (clean) {
+                        h += '<div class="hint" style="margin:0 0 16px">✅ 当前文件无需修复。如需手动微调时间轴（例如配合不同版本音频），可继续使用下方工具。</div>';
+                }
+                h += '<div class="fixgrid">';
+                h += '<div class="opt"><div class="o-title">修复对象（把谁的时间轴对齐到谁）</div>';
+                h += '<label><input type="radio" name="fixTarget" value="translit" checked><span>修正<b>音译</b>时间轴（推荐）<small>平移 &lt;transliterations&gt; 内的音译时间，正文保持不变 —— 适用于正文时间与你的音频一致的情况</small></span></label>';
+                h += '<label><input type="radio" name="fixTarget" value="body"><span>修正<b>正文</b>时间轴<small>平移 body 内全部时间 —— 仅当你的音频实际包含 leadingSilence 前置静音时使用</small></span></label>';
+                h += "</div>";
+                h += '<div class="opt"><div class="o-title">修复方式</div>';
+                h += '<label><input type="radio" name="fixMode" value="shift" checked><span><b>统一偏移</b>修正<small>整体平移检测到的偏移量，保留原有相对结构，最小改动</small></span></label>';
+                h += '<label><input type="radio" name="fixMode" value="force"><span><b>按字强制对齐</b><small>把每个音译 span 的时间直接改写为对应逐字的时间；非统一错位也能修，改动更彻底</small></span></label>';
+                h += "</div></div>";
+                h += '<div class="shift-row"><label for="shiftInput">修正量</label><input type="number" id="shiftInput" step="10" value="' + (-mode) + '"><span style="font-size:12px;color:var(--faint)">ms（正 = 目标时间轴延后）</span></div>';
+                h += '<div class="hint" id="shiftHint"></div>';
+                h += '<div class="row" style="margin-top:18px"><button class="btn primary" id="btnFix">⚡ 执行修复</button></div>';
+                h += '<details class="why"><summary>为什么会发生这种错位？</summary>' +
+                        "<p>Apple Music TTML 的 <code>&lt;iTunesMetadata leadingSilence=\"…\"&gt;</code> 表示音频开头的静音时长。不少转换 / 裁剪工具在处理时，<b>只对正文 body 的时间轴扣除了这段静音，却漏掉了 head 里 &lt;transliterations&gt; 的音译时间</b>（或反之），于是同一份文件里出现两套相差正好 leadingSilence 的时间轴。</p>" +
+                        "<p>AMLL 解析器按时间把音译与逐字配对（±2ms 快速通道 / IoU≥0.1）。整体错位后：短字（时长不足）交并比低于阈值 → <b>音译为空</b>；长字虽能重叠匹配 → 却容易<b>配到前一个字的读音</b>。修复就是把两套时间轴归一。</p>" +
+                        "</details>";
+                h += "</section>";
+                F.innerHTML = h;
+
+                var shiftInput = $("#shiftInput");
+                var manualDirty = false;
+                function updateHint() {
+                        var target = document.querySelector("input[name=fixTarget]:checked").value;
+                        var fmode = document.querySelector("input[name=fixMode]:checked").value;
+                        var hint = $("#shiftHint");
+                        shiftInput.disabled = fmode === "force";
+                        if (fmode === "force") {
+                                hint.innerHTML = "已选择<b>按字强制对齐</b>：将忽略修正量，把每个音译 span 的 begin/end 直接改写为对应正文逐字的时间（仅处理逐字数与音译 span 数一致的行）。";
+                        } else if (mode !== 0) {
+                                var need = target === "body" ? mode : -mode;
+                                hint.innerHTML = "检测到音译比正文" + (mode > 0 ? "晚" : "早") + " <b>" + Math.abs(mode) + "ms</b>" +
+                                        (a.leadingSilenceMs != null && Math.abs(mode - a.leadingSilenceMs) < 1 ? "（= leadingSilence " + (a.leadingSilenceMs / 1000) + "s）" : "") +
+                                        "。建议修正量 <b>" + need + "ms</b>" + (target === "body" ? "（正文延后，使两轴重合）" : "（音译提前，使两轴重合）") + "。";
+                                if (!manualDirty) shiftInput.value = need;
+                        } else {
+                                hint.innerHTML = "未检测到统一偏移。可手动输入修正量（正 = 目标时间轴延后）。";
+                        }
+                }
+                shiftInput.addEventListener("input", function () { manualDirty = true; });
+                document.querySelectorAll("input[name=fixTarget]").forEach(function (r) { r.addEventListener("change", updateHint); });
+                document.querySelectorAll("input[name=fixMode]").forEach(function (r) { r.addEventListener("change", updateHint); });
+                updateHint();
+
+                $("#btnFix").addEventListener("click", function () { doFix(); });
+        }
+
+        function doFix() {
+                var target = document.querySelector("input[name=fixTarget]:checked").value;
+                var fmode = document.querySelector("input[name=fixMode]:checked").value;
+                var res;
+                try {
+                        if (fmode === "force") res = E.fixForceIndex(state.raw, state.analysis);
+                        else {
+                                var shift = Math.round(parseFloat($("#shiftInput").value) || 0);
+                                res = target === "body" ? E.fixBody(state.raw, shift) : E.fixTranslit(state.raw, shift);
+                        }
+                } catch (err) {
+                        toast("修复失败：" + ((err && err.message) || err));
+                        return;
+                }
+                if (!res || !res.ok) { toast((res && res.error) || "修复失败"); return; }
+                if (res.clamped > 0) toast("注意：有 " + res.clamped + " 个时间戳平移后小于 0，已钳制为 0.000");
+                var verify;
+                try { verify = E.analyze(res.text, window.DOMParser); }
+                catch (err) { verify = { ok: false, error: (err && err.message) || String(err) }; }
+                renderResult(res, verify);
+        }
+
+        /* ================= 修复结果 ================= */
+        function renderResult(res, v) {
+                var S = $("#resultSection");
+                var oldA = state.analysis;
+                var o = oldA && oldA.match ? oldA.match.overall : null;
+                var n = v.ok && v.match ? v.match.overall : null;
+
+                var pass = n && n.empty === 0 && n.mispaired === 0;
+                var h = '<section class="card"><h2><span class="step">4</span>修复结果与验证</h2>';
+                if (!v.ok) {
+                        h += bannerHtml("b-amber", "🤔", "已生成，但验证未通过", "修复后的文件无法再次解析：" + esc(v.error || "") + "<br>请尝试改用「按字强制对齐」方式。");
+                } else if (pass) {
+                        h += bannerHtml("b-green", "🎉", "修复完成，验证通过",
+                                "修复后重新模拟 AMLL 匹配：<b>" + n.fast + "/" + n.total + "</b> 个逐字单元全部走 ±2ms 快速通道直接命中，<b>0</b> 个音译为空、<b>0</b> 个错位配对。");
+                } else {
+                        h += bannerHtml("b-amber", "🤔", "已执行，但仍有残留问题",
+                                "修复后仍有 <b>" + (n ? n.empty : "?") + "</b> 个音译为空 / <b>" + (n ? n.mispaired : "?") + "</b> 个错位配对。常见原因：逐字数与音译 span 数不一致（" + (res.skippedTexts ? "已跳过 " + res.skippedTexts + " 行" : "见上方明细") + "），请检查这些行的音译内容。");
+                }
+
+                h += '<div class="cmp"><div class="col old"><h4>修复前</h4>';
+                h += cmpRow("音译为空的字", o ? o.empty : "—");
+                h += cmpRow("错位配对", o ? o.mispaired : "—");
+                h += cmpRow("±2ms 快速通道", o ? o.fast + " / " + o.total : "—");
+                h += cmpRow("时间轴偏移", oldA && oldA.offset && oldA.offset.mode != null ? signed(oldA.offset.mode) + "ms" : "—");
+                h += "</div><div class=\"col new\"><h4>修复后</h4>";
+                h += cmpRow("音译为空的字", n ? n.empty : "—");
+                h += cmpRow("错位配对", n ? n.mispaired : "—");
+                h += cmpRow("±2ms 快速通道", n ? n.fast + " / " + n.total : "—");
+                h += cmpRow("时间轴偏移", v.ok && v.offset && v.offset.mode != null ? signed(v.offset.mode) + "ms" : "—");
+                h += "</div></div>";
+
+                /* 样例对比 */
+                var sample = pickSample(oldA, v);
+                if (sample) {
+                        h += '<div class="blocktitle">🧪 样例行对比 · ' + esc(sample.id) + " 『" + esc(sample.lineText.slice(0, 26)) + "』</div>";
+                        h += '<div class="cmp"><div class="col old"><h4>修复前音译时间</h4><div class="code">' + sample.oldCode + "</div></div>";
+                        h += '<div class="col new"><h4>修复后音译时间</h4><div class="code">' + sample.newCode + "</div></div></div>";
+                }
+
+                h += '<div class="row" style="margin-top:18px">';
+                h += '<button class="btn primary" id="btnDownload">⬇ 下载修复版 .ttml</button>';
+                h += '<button class="btn ghost" id="btnCopy">复制修复内容</button>';
+                h += '<button class="btn ghost" id="btnReuse">用修复结果重新分析</button>';
+                h += "</div>";
+                h += '<div class="hint" style="margin-top:14px">修复只改写时间戳数值（保留 S.mmm / M:S.mmm 原格式风格），其余内容与原文件字节级一致。建议在 AMLL TTML Tool 中重新导入确认效果。</div>';
+                h += "</section>";
+
+                S.innerHTML = h;
+                state.fixed = res.text;
+
+                $("#btnDownload").addEventListener("click", function () {
+                        var base = (state.name || "lyrics").replace(/\.(ttml|xml|txt)$/i, "");
+                        var blob = new Blob([state.fixed], { type: "application/xml;charset=utf-8" });
+                        var url = URL.createObjectURL(blob);
+                        var link = document.createElement("a");
+                        link.href = url;
+                        link.download = base + "_时间轴修复.ttml";
+                        document.body.appendChild(link);
+                        link.click();
+                        link.remove();
+                        setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+                        toast("已开始下载 " + base + "_时间轴修复.ttml");
+                });
+                $("#btnCopy").addEventListener("click", function () {
+                        navigator.clipboard && navigator.clipboard.writeText(state.fixed).then(
+                                function () { toast("修复内容已复制到剪贴板"); },
+                                function () { toast("复制失败，请手动选择内容"); }
+                        );
+                });
+                $("#btnReuse").addEventListener("click", function () {
+                        loadText(state.fixed, ((state.name || "lyrics").replace(/\.(ttml|xml|txt)$/i, "")) + "_时间轴修复.ttml");
+                });
+                S.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+
+        function cmpRow(label, value) {
+                return '<div class="cmprow"><span>' + label + "</span><b>" + value + "</b></div>";
+        }
+
+        function pickSample(oldA, v) {
+                if (!oldA || !oldA.match || !oldA.match.langs.length) return null;
+                var lg = oldA.match.langs[0];
+                var pl = null;
+                for (var i = 0; i < lg.perLine.length; i++) {
+                        if (lg.perLine[i].empty > 0 || lg.perLine[i].mispaired > 0) { pl = lg.perLine[i]; break; }
+                }
+                if (!pl) return null;
+                var oldSpans = oldA.translit.list[0].texts.get(pl.id) || [];
+                var newSpans = (v.ok && v.translit && v.translit.list.length) ? (v.translit.list[0].texts.get(pl.id) || []) : [];
+                var oldCode = "", newCode = "";
+                for (var x = 0; x < oldSpans.length && x < 6; x++) {
+                        oldCode += '<span class="t">' + esc(oldSpans[x].text) + "</span> <span class=\"v\">" + E.formatTimeMs(oldSpans[x].begin) + " ~ " + E.formatTimeMs(oldSpans[x].end) + "</span><br>";
+                }
+                for (var y = 0; y < newSpans.length && y < 6; y++) {
+                        newCode += '<span class="t">' + esc(newSpans[y].text) + "</span> <span class=\"v\">" + E.formatTimeMs(newSpans[y].begin) + " ~ " + E.formatTimeMs(newSpans[y].end) + "</span><br>";
+                }
+                if (oldSpans.length > 6) oldCode += "… 共 " + oldSpans.length + " 个";
+                if (newSpans.length > 6) newCode += "… 共 " + newSpans.length + " 个";
+                return { id: pl.id, lineText: pl.lineText || "", oldCode: oldCode, newCode: newCode };
+        }
+
+        wireInput();
+})();
+</script>
+</body>
+</html>

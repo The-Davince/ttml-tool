@@ -1,0 +1,254 @@
+.windowShell {
+	flex: 0 0 auto;
+	height: 100%;
+	overflow: hidden;
+	position: relative;
+}
+
+.windowInner {
+	position: relative;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	background: color-mix(in srgb, var(--gray-2) 78%, transparent);
+	backdrop-filter: blur(20px) saturate(1.25);
+	border-left: 1px solid var(--gray-a6);
+	border-radius: 14px 0 0 14px;
+	overflow: hidden;
+	box-shadow:
+		-16px 0 40px -12px rgba(0, 0, 0, 0.28),
+		-1px 0 0 0 var(--gray-a5);
+}
+
+.resizeHandle {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: 6px;
+	z-index: 20;
+	cursor: col-resize;
+	touch-action: none;
+}
+
+.resizeHandle::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 2px;
+	width: 2px;
+	border-radius: 1px;
+	background: transparent;
+	transition: background 0.15s ease;
+}
+
+.resizeHandle:hover::after,
+.resizeHandle[data-dragging]::after {
+	background: var(--accent-9);
+}
+
+.tabBar {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: stretch;
+	gap: 4px;
+	height: 40px;
+	padding: 4px 4px 0 8px;
+	border-bottom: 1px solid var(--gray-a5);
+	background: color-mix(in srgb, var(--gray-a3) 30%, transparent);
+}
+
+.tabsRow {
+	display: flex;
+	align-items: stretch;
+	gap: 2px;
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow-x: auto;
+	overflow-y: hidden;
+	scrollbar-width: none;
+}
+
+.tabsRow::-webkit-scrollbar {
+	display: none;
+}
+
+.tab {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 0 0 auto;
+	max-width: 168px;
+	min-width: 0;
+	padding: 0 6px 0 10px;
+	border-radius: 7px 7px 0 0;
+	color: var(--gray-11);
+	font-size: 12.5px;
+	cursor: pointer;
+	user-select: none;
+	outline: none;
+	overflow: hidden;
+	transition:
+		background 0.12s ease,
+		color 0.12s ease;
+}
+
+.tab:hover {
+	background: var(--gray-a3);
+	color: var(--gray-12);
+}
+
+.tab:active {
+	cursor: grabbing;
+}
+
+.tab[data-dragging] {
+	opacity: 0.45;
+}
+
+.tab[data-drop-before] {
+	box-shadow: -2px 0 0 0 var(--accent-9);
+}
+
+.tab[data-drop-after] {
+	box-shadow: 2px 0 0 0 var(--accent-9);
+}
+
+.tab:focus-visible {
+	box-shadow: inset 0 0 0 1px var(--accent-8);
+}
+
+.tab[data-active] {
+	background: var(--accent-a3);
+	color: var(--accent-12);
+	font-weight: 500;
+}
+
+.tab[data-active]::after {
+	content: "";
+	position: absolute;
+	left: 8px;
+	right: 8px;
+	bottom: 0;
+	height: 2px;
+	border-radius: 1px;
+	background: var(--accent-9);
+}
+
+.tabIcon {
+	display: flex;
+	flex: 0 0 auto;
+	width: 15px;
+	height: 15px;
+	align-items: center;
+	justify-content: center;
+}
+
+.tabIcon > svg {
+	width: 15px;
+	height: 15px;
+}
+
+.tabLabel {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+.tabClose {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border: 0;
+	border-radius: 4px;
+	background: transparent;
+	color: inherit;
+	opacity: 0;
+	cursor: pointer;
+	transition:
+		opacity 0.12s ease,
+		background 0.12s ease;
+}
+
+.tabClose > svg {
+	width: 12px;
+	height: 12px;
+}
+
+.tab:hover .tabClose,
+.tab[data-active] .tabClose,
+.tabClose:focus-visible {
+	opacity: 1;
+}
+
+.tabClose:hover {
+	background: var(--gray-a4);
+	color: var(--gray-12);
+}
+
+.addButton,
+.closeButton {
+	align-self: center;
+	flex: 0 0 auto;
+}
+
+.closeButton {
+	margin-right: 2px;
+}
+
+.tabContent {
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+.tabPane {
+	flex: 1 1 auto;
+	min-height: 0;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	padding: 8px;
+	animation: tabPaneIn 0.18s ease;
+}
+
+@keyframes tabPaneIn {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.emptyState {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	color: var(--gray-10);
+	user-select: none;
+}
+
+.emptyIcon {
+	width: 36px;
+	height: 36px;
+	color: var(--gray-8);
+}
+
+.emptyText {
+	font-size: 13px;
+}

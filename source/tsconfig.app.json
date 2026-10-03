@@ -1,0 +1,30 @@
+{
+	"compilerOptions": {
+		"target": "esnext",
+		"useDefineForClassFields": true,
+		"lib": ["ESNext", "DOM", "DOM.Iterable", "WebWorker"],
+		"types": ["audioworklet", "wicg-file-system-access", "vite/client"],
+		"module": "ESNext",
+		"skipLibCheck": true,
+		"allowJs": true,
+
+		/* Bundler mode */
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"isolatedModules": true,
+		"moduleDetection": "force",
+		"noEmit": true,
+		"jsx": "react-jsx",
+
+		/* Linting */
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noImplicitOverride": true,
+		"noFallthroughCasesInSwitch": true,
+		"paths": {
+			"$/*": ["./src/*"]
+		}
+	},
+	"include": ["src"]
+}

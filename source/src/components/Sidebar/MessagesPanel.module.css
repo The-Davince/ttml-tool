@@ -1,0 +1,130 @@
+.container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+	position: relative;
+}
+
+.toolbar {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border-bottom: 1px solid var(--gray-a4);
+	flex-shrink: 0;
+}
+
+.countText {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.messageList {
+	flex: 1 1 auto;
+	overflow-y: auto;
+	padding: var(--space-2);
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.messageItem {
+	display: flex;
+	flex-direction: row;
+	align-items: flex-start;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-2);
+	border: 1px solid transparent;
+	transition:
+		background-color 0.1s,
+		border-color 0.1s,
+		opacity 0.2s;
+	user-select: none;
+}
+
+.messageItem[data-active="true"] {
+	cursor: pointer;
+}
+
+.messageItem[data-active="true"]:hover {
+	background: var(--red-a2);
+	border-color: var(--red-a5);
+}
+
+.messageItem[data-active="false"] {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.statusIcon {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-top: 2px;
+}
+
+.activeIcon {
+	color: var(--red-9);
+}
+
+.resolvedIcon {
+	color: var(--gray-8);
+}
+
+.messageContent {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.messageText {
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--gray-12);
+	word-break: break-word;
+	white-space: pre-wrap;
+}
+
+.messageItem[data-active="false"] .messageText {
+	color: var(--gray-9);
+}
+
+.detailText {
+	font-size: 11px;
+	line-height: 1.4;
+	color: var(--red-11);
+	word-break: break-word;
+}
+
+.messageItem[data-active="false"] .detailText {
+	display: none;
+}
+
+.metaText {
+	font-size: 11px;
+	line-height: 1.4;
+	color: var(--gray-8);
+}
+
+.emptyState {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	padding: var(--space-4);
+}
+
+.emptyIcon {
+	font-size: 24px;
+	color: var(--gray-7);
+}

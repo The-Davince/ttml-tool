@@ -1,0 +1,31 @@
+.amllWrapper {
+        overflow: hidden;
+        flex-grow: 1;
+        padding: 0;
+        height: 100%;
+
+        --amll-lp-color: var(--gray-12);
+        &.isDark {
+                --amll-lp-color: var(--white-12);
+        }
+}
+
+/*
+ * 交换预览界面翻译行与音译行的位置
+ *
+ * AMLL 歌词行的 DOM 结构固定为三个子元素：
+ *   [0] 主歌词行  [1] 翻译行  [2] 音译行
+ * 通过将容器改为纵向 flex 并调整 order 实现两者互换
+ */
+.swapSubLines :global(.FmKaba_lyricLine) {
+        display: flex;
+        flex-direction: column;
+}
+
+.swapSubLines :global(.FmKaba_lyricLine > div:nth-child(2)) {
+        order: 3;
+}
+
+.swapSubLines :global(.FmKaba_lyricLine > div:nth-child(3)) {
+        order: 2;
+}

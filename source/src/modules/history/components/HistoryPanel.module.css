@@ -1,0 +1,380 @@
+.historyPanel {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	font-size: 13px;
+}
+
+.header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 10px 12px 8px;
+	border-bottom: 1px solid var(--gray-a5);
+	flex-shrink: 0;
+}
+
+.headerTitle {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 600;
+	color: var(--gray-12);
+}
+
+.countBadge {
+	background: var(--accent-a4);
+	color: var(--accent-11);
+	border-radius: 999px;
+	padding: 0 8px;
+	font-size: 11px;
+	line-height: 18px;
+	font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 上限设置行 ---------- */
+
+.limitRow {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 5px;
+	padding: 7px 12px;
+	border-bottom: 1px solid var(--gray-a5);
+	background: var(--gray-a2);
+	flex-shrink: 0;
+}
+
+.limitLabel {
+	font-size: 11.5px;
+	color: var(--gray-10);
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.limitPreset {
+	font-size: 11px;
+	padding: 1px 8px;
+	border-radius: 999px;
+	border: 1px solid var(--gray-a5);
+	background: var(--gray-1);
+	color: var(--gray-11);
+	cursor: pointer;
+	font-family: inherit;
+	font-variant-numeric: tabular-nums;
+	transition: all 0.12s ease;
+}
+
+.limitPreset:hover {
+	border-color: var(--accent-a7);
+	color: var(--accent-12);
+}
+
+.limitPreset[data-active] {
+	background: var(--accent-a4);
+	border-color: var(--accent-a7);
+	color: var(--accent-12);
+	font-weight: 600;
+}
+
+.limitInput {
+	width: 64px;
+	font-size: 12px;
+	padding: 2px 7px;
+	border-radius: 7px;
+	border: 1px solid var(--gray-a7);
+	background: var(--gray-1);
+	color: var(--gray-12);
+	font-family: inherit;
+	outline: none;
+	font-variant-numeric: tabular-nums;
+}
+
+.limitInput:focus {
+	border-color: var(--accent-8);
+	box-shadow: 0 0 0 2px var(--accent-a4);
+}
+
+/* ---------- 来源图例 ---------- */
+
+.legend {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 12px;
+	padding: 6px 14px;
+	border-bottom: 1px solid var(--gray-a5);
+	font-size: 11px;
+	color: var(--gray-10);
+	flex-shrink: 0;
+}
+
+.legendItem {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+}
+
+.legendDot {
+	width: 9px;
+	height: 9px;
+	border-radius: 999px;
+	background: var(--gray-3);
+	border: 2px solid var(--gray-6);
+	flex-shrink: 0;
+}
+
+.legendItem[data-source="ai"] .legendDot {
+	background: var(--accent-a4);
+	border-color: var(--accent-8);
+}
+
+.legendItem[data-source="restore"] .legendDot {
+	background: var(--amber-a4);
+	border-color: var(--amber-8);
+}
+
+.legendItem[data-source="load"] .legendDot {
+	background: var(--blue-a4);
+	border-color: var(--blue-8);
+}
+
+/* ---------- 列表 ---------- */
+
+.list {
+	flex: 1;
+	overflow-y: auto;
+	padding: 8px 10px 16px;
+	min-height: 0;
+}
+
+.list::-webkit-scrollbar {
+	width: 8px;
+}
+
+.list::-webkit-scrollbar-thumb {
+	background: var(--gray-a7);
+	border-radius: 4px;
+}
+
+.empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 40px 16px;
+	color: var(--gray-10);
+	text-align: center;
+}
+
+.emptyIcon {
+	font-size: 28px;
+	color: var(--gray-8);
+}
+
+/* ---------- 地铁式版本主线 ---------- */
+
+.timeline {
+	position: relative;
+}
+
+/* 主版本线（一条干净的"地铁线路"） */
+.timeline::before {
+	content: "";
+	position: absolute;
+	left: 19px;
+	top: 16px;
+	bottom: 12px;
+	width: 2px;
+	background: var(--gray-a6);
+	border-radius: 1px;
+}
+
+.nowMarker {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 24px;
+	padding-left: 40px;
+	color: var(--gray-11);
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.nowDot {
+	position: absolute;
+	left: 14px;
+	width: 12px;
+	height: 12px;
+	border-radius: 999px;
+	background: var(--accent-9);
+	box-shadow: 0 0 0 3px var(--accent-a4);
+}
+
+/* 悬停"还原"时显示的连线层（平时为空） */
+.curveLayer {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	overflow: visible;
+	z-index: 1;
+}
+
+.curvePath {
+	fill: none;
+	stroke: var(--amber-9);
+	stroke-width: 2.5;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	opacity: 0.9;
+}
+
+/* ---------- 站点行（紧凑一行） ---------- */
+
+.entry {
+	position: relative;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 28px;
+	padding: 0 6px 0 40px;
+	border-radius: 8px;
+	cursor: default;
+	transition: background 0.12s ease;
+}
+
+.entry:hover {
+	background: var(--gray-a3);
+}
+
+.entryDot {
+	position: absolute;
+	left: 12px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 16px;
+	height: 16px;
+	border-radius: 999px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--gray-2);
+	border: 2px solid var(--gray-7);
+	color: var(--gray-11);
+	font-size: 9px;
+	line-height: 1;
+	z-index: 2;
+}
+
+.entry[data-source="ai"] .entryDot {
+	background: var(--accent-a5);
+	border-color: var(--accent-9);
+	color: var(--accent-11);
+}
+
+.entry[data-source="restore"] .entryDot {
+	background: var(--amber-a5);
+	border-color: var(--amber-9);
+	color: var(--amber-11);
+}
+
+.entry[data-source="load"] .entryDot {
+	background: var(--blue-a5);
+	border-color: var(--blue-9);
+	color: var(--blue-11);
+}
+
+/* 悬停某条"还原"时，其源版本站点高亮成环 */
+.entry[data-highlight] .entryDot {
+	box-shadow: 0 0 0 3px var(--amber-a5);
+	border-color: var(--amber-9);
+}
+
+.entry[data-highlight] {
+	background: var(--amber-a2);
+}
+
+/* 被悬停的"还原"站点自身轻微强调 */
+.entry[data-active] .entryDot {
+	box-shadow: 0 0 0 2px var(--amber-a4);
+}
+
+.codeChip {
+	font-family: var(
+		--code-font-family,
+		ui-monospace,
+		"SFMono-Regular",
+		Menlo,
+		Consolas,
+		monospace
+	);
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--gray-10);
+	background: var(--gray-a4);
+	border-radius: 5px;
+	padding: 1px 5px;
+	line-height: 15px;
+	flex-shrink: 0;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.03em;
+}
+
+.description {
+	flex: 1 1 auto;
+	min-width: 0;
+	color: var(--gray-12);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.entry[data-source="restore"] .description {
+	color: var(--amber-11);
+}
+
+.restoreRef {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--amber-11);
+	flex-shrink: 0;
+}
+
+.restoreRef svg {
+	font-size: 12px;
+}
+
+.entryTime {
+	font-size: 11px;
+	color: var(--gray-10);
+	font-variant-numeric: tabular-nums;
+	flex-shrink: 0;
+}
+
+.restoreButton {
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border-radius: 7px;
+	flex-shrink: 0;
+	opacity: 0;
+	transition:
+		opacity 0.12s ease,
+		background 0.12s ease;
+}
+
+.entry:hover .restoreButton,
+.restoreButton:focus-visible {
+	opacity: 1;
+}

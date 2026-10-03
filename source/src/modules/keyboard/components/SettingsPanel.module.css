@@ -1,0 +1,45 @@
+.groupPanel {
+	padding: var(--space-3);
+	background: var(--gray-a2);
+	border: 1px solid var(--gray-a4);
+	border-radius: var(--radius-3);
+}
+
+.groupPanel :global(.rt-TextFieldRoot) {
+	width: 100%;
+}
+
+.shortcutField {
+	min-width: 0;
+	background: var(--gray-a2);
+	border: 1px solid var(--gray-a6);
+	box-shadow: none;
+}
+
+.shortcutField:hover {
+	background: var(--gray-a3);
+	border-color: var(--gray-a7);
+}
+
+.shortcutField:focus-within {
+	border-color: var(--accent-a8);
+	box-shadow: 0 0 0 1px var(--accent-a8);
+}
+
+.shortcutField :global(input) {
+	color: var(--gray-12);
+	font-family: var(--font-mono);
+	font-size: 12px;
+	font-weight: 600;
+	text-align: center;
+	cursor: pointer;
+}
+
+.shortcutField[data-listening] {
+	background: var(--accent-3);
+	border-color: var(--accent-7);
+}
+
+.shortcutField[data-listening] :global(input) {
+	color: var(--accent-11);
+}
