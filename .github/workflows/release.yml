@@ -39,21 +39,25 @@ jobs:
           fi
           echo "ARTIFACT=ttml-tool-${SUFFIX}" >> "$GITHUB_ENV"
 
-      - name: Package zip (dist + server.py)
+      - name: Stage release contents (dist + server.py + README.md)
         run: |
           mkdir release
           cp -r dist release/dist
           cp server.py release/server.py
           cp README.md release/README.md
-          cd release
-          zip -r "../${ARTIFACT}.zip" .
-          cd ..
 
-      - name: Upload artifact (Actions 页面可下载)
+      - name: Build distributable zip (仅用于 GitHub Release)
+        run: (cd release && zip -r "../${ARTIFACT}.zip" .)
+
+      - name: Upload artifact (Actions 下载即单个 zip)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT }}
-          path: ${{ env.ARTIFACT }}.zip
+          # 直接上传 release 目录: Actions 本身就会压成 1 个 zip。
+          # root: release 让压缩包内层直接是 dist/ server.py README.md（去掉 release/ 前缀）。
+          # 不再喂给它一个已压好的 .zip，否则就是 zip 套 zip。
+          path: release
+          root: release
           if-no-files-found: error
 
       - name: Create GitHub Release (仅 tag 触发)
