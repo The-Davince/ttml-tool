@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""test-1
-TTML Tool 本地启动器（含 AI 助手后端）
+"""TTML Tool 本地启动器（含 AI 助手后端）
 
 用法:
     python3 server.py            # 默认端口 26013
