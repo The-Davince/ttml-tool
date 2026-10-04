@@ -2,13 +2,15 @@
 
 <img src="./public/logo.svg" align="center" width="256">
 
-# Apple Music-like Lyrics TTML Tool
+# TTML Tool
 
-一个全新的逐词歌词编辑器！针对 [Apple Music-like Lyrics 生态](https://github.com/amll-dev/applemusic-like-lyrics)制作！
+一个更好用的 <del>（可能是）</del> 逐词歌词编辑器！基于 [amll-ttml-tool](https://github.com/amll-dev/amll-ttml-tool ) 二改。
 
-<img width="1312" alt="image" src="https://github.com/user-attachments/assets/4db81b29-df0c-4f6e-819a-3b956b28247c">
-<img width="1312" alt="image" src="https://github.com/user-attachments/assets/929eefee-ebda-43db-ad04-c0f099077053">
-<img width="1312" alt="image" src="https://github.com/user-attachments/assets/7c80902e-45a9-42ae-b980-f5500069acb8">
+<img width="1312" alt="image" src="https://zhishi.oss-cn-beijing.aliyuncs.com/user_projects_assets/cd2de06ba8c14173a28700fcd1318c5e.bmp?x-oss-process=image/rounded-corners,r_25/format,png">
+
+<img width="1312" alt="image" src="https://zhishi.oss-cn-beijing.aliyuncs.com/user_projects_assets/6ea760b1cadd4456be2bafb6ffbcacd6.bmp?x-oss-process=image/rounded-corners,r_25/format,png">
+
+<img width="1312" alt="image" src="https://zhishi.oss-cn-beijing.aliyuncs.com/user_projects_assets/7998417a3f854687aefc6f59c6cb66c1.bmp?x-oss-process=image/rounded-corners,r_25/format,png">
 
 </div>
 
@@ -17,11 +19,9 @@
 > [!WARNING]
 > 本工具不建议移动手机或小尺寸电子设备使用，操作会非常繁琐！
 
-你可以通过访问 [`https://amll-ttml-tool.stevexmh.net/`](https://amll-ttml-tool.stevexmh.net/)来使用本工具的在线版本。
+你可以通过访问 [`https://ttml.223110.xyz/`](https://ttml.223110.xyz/)来使用本工具的在线版本。
 
-欢迎访问[ test 分支](https://amll-ttml-tool-test.vercel.app/)来体验最新的功能和最新的 BUG！
 
-也可以使用 Github Action 构建的 Tauri 桌面版本，具体见 [Github Action 构建 Tauri 桌面版本](https://github.com/amll-dev/amll-ttml-tool/actions/workflows/build-desktop.yaml)。
 
 ## 编辑器功能
 
@@ -36,7 +36,6 @@
 
 ## 开发构建
 
-本工具构建可能相对比较复杂，如果文字描述太过繁杂的话可以直接参考 [`build-desktop.yaml`](.github/workflows/build-desktop.yaml) 工作流的步骤自行进行。
 
 首先，本项目仅可使用 PNPM，请确保你已经安装好了 PNPM 包管理器！
 
