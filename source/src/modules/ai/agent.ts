@@ -74,41 +74,131 @@ const buildSystemPrompt = (): string => {
 9. 完成修改后，简要总结做了什么。使用简体中文回复，简洁友好，不要输出 Markdown 标题。`;
 };
 
+/**
+ * 通道探测缓存：
+ *   null = 尚未探测；true = 该 baseURL 可浏览器直连；false = 直连被 CORS/网络拦截，走后端代理。
+ * 一旦确认，同一次会话内后续请求沿用，避免每轮都先撞一次失败的直连。
+ */
+let directChannelOk: boolean | null = null;
+let probedBaseURL = "";
+
+/** baseURL 变化时重置探测（在 runAgentTurn 开头调用） */
+export const resetAIChannelProbe = (baseURL: string) => {
+        if (probedBaseURL !== baseURL) {
+                directChannelOk = null;
+                probedBaseURL = baseURL;
+        }
+};
+
+/** 由 baseURL 推导 chat/completions 端点（与 server.py 逻辑保持一致） */
+const buildChatEndpoint = (baseURL: string): string => {
+        const b = baseURL.trim().replace(/\/+$/, "");
+        return b.endsWith("/chat/completions") ? b : `${b}/chat/completions`;
+};
+
+/** 解析 OpenAI 兼容响应，取出 choices[0].message */
+const pickMessage = (data: unknown): LLMMessage => {
+        const choices = (data as { choices?: Array<{ message?: LLMMessage }> })
+                .choices;
+        const message = choices?.[0]?.message;
+        if (!message) throw new Error("AI 接口响应中缺少 choices[0].message");
+        return message;
+};
+
 const chatCompletion = async (
         settings: AISettings,
         messages: LLMMessage[],
         signal: AbortSignal,
 ): Promise<{ message: LLMMessage }> => {
-        const resp = await fetch("/api/ai/chat", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                        baseURL: settings.baseURL,
-                        apiKey: settings.apiKey,
-                        model: settings.model,
-                        temperature: settings.temperature,
-                        messages,
-                        tools: getToolSchemas(),
-                }),
-                signal,
-        });
-        let data: unknown;
+        const tools = getToolSchemas();
+        resetAIChannelProbe(settings.baseURL);
+
+        /** 通道一：浏览器直连 OpenAI 兼容端点 */
+        const tryDirect = async (): Promise<{ message: LLMMessage }> => {
+                const resp = await fetch(buildChatEndpoint(settings.baseURL), {
+                        method: "POST",
+                        headers: {
+                                "Content-Type": "application/json",
+                                ...(settings.apiKey
+                                        ? { Authorization: `Bearer ${settings.apiKey}` }
+                                        : {}),
+                        },
+                        body: JSON.stringify({
+                                model: settings.model,
+                                temperature: settings.temperature,
+                                stream: false,
+                                messages,
+                                ...(tools.length
+                                        ? { tools, tool_choice: "auto" }
+                                        : {}),
+                        }),
+                        signal,
+                });
+                // fetch 未抛错 = 传输层与 CORS 均正常，缓存“可直连”
+                directChannelOk = true;
+                let data: unknown;
+                try {
+                        data = await resp.json();
+                } catch {
+                        throw new Error(`AI 接口返回了非 JSON 内容（HTTP ${resp.status}）`);
+                }
+                if (!resp.ok) {
+                        throw new Error(
+                                (data as { error?: string })?.error ??
+                                        `AI 接口请求失败（HTTP ${resp.status}）`,
+                        );
+                }
+                return { message: pickMessage(data) };
+        };
+
+        /** 通道二：本地后端代理 server.py /api/ai/chat */
+        const tryProxy = async (): Promise<{ message: LLMMessage }> => {
+                const resp = await fetch("/api/ai/chat", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                                baseURL: settings.baseURL,
+                                apiKey: settings.apiKey,
+                                model: settings.model,
+                                temperature: settings.temperature,
+                                messages,
+                                tools,
+                        }),
+                        signal,
+                });
+                let data: unknown;
+                try {
+                        data = await resp.json();
+                } catch {
+                        throw new Error(`AI 接口返回了非 JSON 内容（HTTP ${resp.status}）`);
+                }
+                if (!resp.ok) {
+                        throw new Error(
+                                (data as { error?: string })?.error ??
+                                        `AI 接口请求失败（HTTP ${resp.status}）`,
+                        );
+                }
+                return { message: pickMessage(data) };
+        };
+
+        // 已确认需要走代理，或尚未配置可直连的 baseURL → 直接代理
+        if (directChannelOk === false || !settings.baseURL.trim()) {
+                return tryProxy();
+        }
+
         try {
-                data = await resp.json();
-        } catch {
-                throw new Error(`AI 接口返回了非 JSON 内容（HTTP ${resp.status}）`);
+                return await tryDirect();
+        } catch (e) {
+                // 用户主动停止：原样抛出，交由上层处理中断
+                if (signal.aborted) throw e;
+                // 仅“传输层失败”（CORS / 网络不可达，浏览器抛 TypeError）才回落代理；
+                // tryDirect 内部因 HTTP 非 2xx / 非 JSON / 缺 message 抛出的 Error 不再重复请求。
+                if (e instanceof TypeError) {
+                        directChannelOk = false;
+                        return tryProxy();
+                }
+                throw e;
         }
-        if (!resp.ok) {
-                const errMsg =
-                        (data as { error?: string })?.error ??
-                        `AI 接口请求失败（HTTP ${resp.status}）`;
-                throw new Error(errMsg);
-        }
-        const choices = (data as { choices?: Array<{ message?: LLMMessage }> })
-                .choices;
-        const message = choices?.[0]?.message;
-        if (!message) throw new Error("AI 接口响应中缺少 choices[0].message");
-        return { message };
 };
 
 /** 更新当前轮次（不可变更新，保持 atom 引用变化） */
@@ -150,6 +240,80 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 export const getToolLabel = (name: string) => TOOL_LABELS[name] ?? name;
+
+/**
+ * 兜底解析：把「写进 content 文本里的工具调用」还原成标准结构。
+ *
+ * 部分端点在 tool_choice=auto 下不会走原生 function calling，而是把
+ * {"tool_calls":[{"name":"...","arguments":{}}]} 当作普通文字塞进 content，
+ * 导致前端读不到 message.tool_calls、把这段 JSON 直接显示给用户。
+ * 这里同时兼容 OpenAI 标准形态与扁平 {name, arguments} 形态。
+ */
+const parseTextToolCalls = (
+        raw: string,
+): NonNullable<LLMMessage["tool_calls"]> => {
+        const text = raw.trim();
+        if (!text || !(text.includes("tool_calls") || text.includes('"name"'))) {
+                return [];
+        }
+        const candidates: string[] = [text];
+        const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        if (fenced) candidates.push(fenced[1].trim());
+        const bracket = text.match(/[[{][\s\S]*[\]}]/);
+        if (bracket) candidates.push(bracket[0]);
+        for (const source of candidates) {
+                let parsed: unknown;
+                try {
+                        parsed = JSON.parse(source);
+                } catch {
+                        continue;
+                }
+                const obj = parsed as Record<string, unknown>;
+                const arr = Array.isArray(parsed)
+                        ? parsed
+                        : Array.isArray(obj?.tool_calls)
+                                ? (obj.tool_calls as unknown[])
+                                : null;
+                if (!arr?.length) continue;
+                const calls: NonNullable<LLMMessage["tool_calls"]> = [];
+                arr.forEach((item, i) => {
+                        const it = (item ?? {}) as Record<string, unknown>;
+                        const fn = (it.function ?? it) as Record<string, unknown>;
+                        const name =
+                                typeof fn.name === "string"
+                                        ? fn.name
+                                        : typeof it.name === "string"
+                                                ? it.name
+                                                : "";
+                        if (!name) return;
+                        const rawArgs = fn.arguments ?? it.arguments;
+                        const argsStr =
+                                typeof rawArgs === "string"
+                                        ? rawArgs
+                                        : rawArgs && typeof rawArgs === "object"
+                                                ? JSON.stringify(rawArgs)
+                                                : "{}";
+                        calls.push({
+                                id:
+                                        typeof it.id === "string" && it.id
+                                                ? it.id
+                                                : `call_text_${Date.now()}_${i}`,
+                                type: "function",
+                                function: { name, arguments: argsStr },
+                        });
+                });
+                if (calls.length) return calls;
+        }
+        return [];
+};
+
+/** 优先用标准 message.tool_calls，为空时回退解析 content 文本 */
+const extractToolCalls = (
+        message: LLMMessage,
+): NonNullable<LLMMessage["tool_calls"]> => {
+        if (message.tool_calls?.length) return message.tool_calls;
+        return parseTextToolCalls(message.content ?? "");
+};
 
 /** 执行一轮 Agent 对话，返回是否成功结束 */
 export async function runAgentTurn(
@@ -203,11 +367,15 @@ export async function runAgentTurn(
                                 durationMs: Math.round(performance.now() - thinkStart),
                         });
 
-                        const toolCalls = message.tool_calls ?? [];
+                        const toolCalls = extractToolCalls(message);
                         if (toolCalls.length > 0) {
+                                // 兜底解析出的文本调用不保留进正文，避免污染会话历史
+                                const assistantText = message.tool_calls?.length
+                                        ? (message.content ?? "")
+                                        : "";
                                 llmMessages.push({
                                         role: "assistant",
-                                        content: message.content ?? "",
+                                        content: assistantText,
                                         tool_calls: toolCalls,
                                 });
                                 for (const tc of toolCalls) {
