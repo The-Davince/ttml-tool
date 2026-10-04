@@ -1,6 +1,7 @@
 import * as wanakana from "wanakana";
 import { uid } from "uid";
 import { recordAIHistory } from "$/modules/history/states";
+import { apiUrl } from "$/modules/ai/states";
 import { ttmlToAmll } from "$/modules/ttml-processor";
 import { lyricLinesAtom } from "$/states/main.ts";
 import { globalStore } from "$/states/store.ts";
@@ -132,7 +133,7 @@ const searchWeb: AgentTool = {
                 const query = String(args.query ?? "").trim();
                 if (!query) return fail("缺少搜索关键词");
                 const maxResults = Math.min(Math.max(Number(args.maxResults) || 6, 1), 12);
-                const resp = await fetch("/api/web-search", {
+                const resp = await fetch(apiUrl("/api/web-search"), {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ query, maxResults }),
@@ -160,8 +161,12 @@ const searchWeb: AgentTool = {
                                         : "没有找到相关结果，建议换个关键词",
                         );
                 }
+                const note =
+                        data.relevance === "low" && data.hint
+                                ? `（⚠ ${data.hint} 请基于当前结果尽快作答，最多再简化关键词重试一次，勿就同一实体反复多轮搜索；若是歌曲/歌手信息，改用 search_qq_music 按歌名或歌手名查。）`
+                                : "";
                 return ok(
-                        `搜索“${query}”，找到 ${results.length} 条结果（引擎：${data.engine}）`,
+                        `搜索“${query}”，找到 ${results.length} 条结果（引擎：${data.engine}）${note}`,
                         results,
                 );
         },
@@ -196,7 +201,7 @@ const searchQQMusic: AgentTool = {
                 const query = String(args.query ?? "").trim();
                 if (!query) return fail("缺少搜索关键词");
                 const maxResults = Math.min(Math.max(Number(args.maxResults) || 8, 1), 20);
-                const resp = await fetch("/api/qq-music-search", {
+                const resp = await fetch(apiUrl("/api/qq-music-search"), {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ query, maxResults }),
@@ -293,7 +298,7 @@ const importQQLyric: AgentTool = {
                         album: String(args.album ?? "").trim(),
                         songId: String(args.songId ?? "").trim(),
                 };
-                const resp = await fetch("/api/qq-music-lyric", {
+                const resp = await fetch(apiUrl("/api/qq-music-lyric"), {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -467,7 +472,7 @@ const readPage: AgentTool = {
                 const url = String(args.url ?? "").trim();
                 if (!/^https?:\/\//.test(url))
                         return fail("url 必须以 http:// 或 https:// 开头");
-                const resp = await fetch("/api/fetch-page", {
+                const resp = await fetch(apiUrl("/api/fetch-page"), {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ url }),

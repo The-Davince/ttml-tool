@@ -153,6 +153,25 @@
 	word-break: break-word;
 }
 
+/* 流式生成时光标: 紧跟答案末尾闪烁的竖条 */
+
+.caret {
+	display: inline-block;
+	width: 2px;
+	height: 1.05em;
+	margin-left: 2px;
+	vertical-align: -0.15em;
+	background: var(--accent-9);
+	border-radius: 1px;
+	animation: aiCaretBlink 1s steps(1) infinite;
+}
+
+@keyframes aiCaretBlink {
+	50% {
+		opacity: 0;
+	}
+}
+
 /* 执行步骤卡片：可折叠 */
 
 .stepsCard {
@@ -694,6 +713,24 @@
 	font-size: 11px;
 	color: var(--gray-9);
 	line-height: 1.5;
+}
+
+.checkboxRow {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--gray-11);
+	cursor: pointer;
+	user-select: none;
+}
+
+.checkboxRow input[type="checkbox"] {
+	width: 14px;
+	height: 14px;
+	accent-color: var(--accent-9);
+	cursor: pointer;
 }
 
 .settingsActions {

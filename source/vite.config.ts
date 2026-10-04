@@ -4,7 +4,7 @@ import babel from "@rolldown/plugin-babel";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import jotaiDebugLabel from "jotai-babel/plugin-debug-label";
 import jotaiReactRefresh from "jotai-babel/plugin-react-refresh";
-import { defineConfig, type PluginOption } from "vite";
+import { defineConfig, loadEnv, type PluginOption } from "vite";
 import i18nextLoader from "vite-plugin-i18next-loader";
 import { VitePWA } from "vite-plugin-pwa";
 
@@ -106,66 +106,81 @@ const plugins: PluginOption = [
 ];
 
 // https://vitejs.dev/config/
-export default defineConfig({
-	plugins,
-	base: process.env.TAURI_ENV_PLATFORM ? "/" : "./",
-	clearScreen: false,
-	server: {
-		headers: {
-			"Cross-Origin-Embedder-Policy": "require-corp",
-			"Cross-Origin-Opener-Policy": "same-origin",
-		},
-		strictPort: true,
-	},
-	envPrefix: ["VITE_", "TAURI_", "AMLL_", "SENTRY_"],
-	build: {
-		// produce sourcemaps
-		sourcemap: true,
+export default defineConfig(({ mode }) => {
+	const env = loadEnv(mode, process.cwd(), "");
+	// dev 服务器把 /api 前缀的请求转发到本地后端 (server.py)。
+	// 转发目标可用 source/.env.local 里的 VITE_API_PROXY_TARGET 覆盖，
+	// 默认 http://127.0.0.1:26013 （server.py 的默认端口）。
+	const proxyTarget = env.VITE_API_PROXY_TARGET || "http://127.0.0.1:26013";
 
-		rolldownOptions: {
-			// Suppress `Module "node:module" has been externalized for browser compatibility`
-			onLog(level, log, defaultHandler) {
-				if (log.message?.includes("node:module")) return;
-				defaultHandler(level, log);
+	return {
+		plugins,
+		base: process.env.TAURI_ENV_PLATFORM ? "/" : "./",
+		clearScreen: false,
+		server: {
+			headers: {
+				"Cross-Origin-Embedder-Policy": "require-corp",
+				"Cross-Origin-Opener-Policy": "same-origin",
 			},
-
-			output: {
-				codeSplitting: {
-					groups: [
-						{
-							name: "react-vendor",
-							test: /node_modules[\\/](react|react-dom)[\\/]/,
-							priority: 20,
-						},
-						{
-							name: "radix-vendor",
-							test: /node_modules[\\/]@radix/,
-							priority: 15,
-						},
-						{
-							name: "amll-vendor",
-							test: /node_modules[\\/]@applemusic-like-lyrics/,
-							priority: 10,
-						},
-						{
-							name: "vendor",
-							test(id) {
-								// 排除掉 hyphen 以便动态导入能够工作
-								return id.includes("node_modules") && !id.includes("hyphen");
-							},
-							priority: 10,
-						},
-					],
+			strictPort: true,
+			proxy: {
+				"/api": {
+					target: proxyTarget,
+					changeOrigin: true,
+					ws: false,
 				},
 			},
 		},
-	},
-	resolve: {
-		alias: {
-			$: resolve(__dirname, "src"),
+		envPrefix: ["VITE_", "TAURI_", "AMLL_", "SENTRY_"],
+		build: {
+			// produce sourcemaps
+			sourcemap: true,
+
+			rolldownOptions: {
+				// Suppress `Module "node:module" has been externalized for browser compatibility`
+				onLog(level, log, defaultHandler) {
+					if (log.message?.includes("node:module")) return;
+					defaultHandler(level, log);
+				},
+
+				output: {
+					codeSplitting: {
+						groups: [
+							{
+								name: "react-vendor",
+								test: /node_modules[\\/](react|react-dom)[\\/]/,
+								priority: 20,
+							},
+							{
+								name: "radix-vendor",
+								test: /node_modules[\\/]@radix/,
+								priority: 15,
+							},
+							{
+								name: "amll-vendor",
+								test: /node_modules[\\/]@applemusic-like-lyrics/,
+								priority: 10,
+							},
+							{
+								name: "vendor",
+								test(id) {
+									// 排除掉 hyphen 以便动态导入能够工作
+									return id.includes("node_modules") && !id.includes("hyphen");
+								},
+								priority: 10,
+							},
+						],
+					},
+				},
+			},
 		},
-	},
-	worker: {
-		format: "es",
-	},
+		resolve: {
+			alias: {
+				$: resolve(__dirname, "src"),
+			},
+		},
+		worker: {
+			format: "es",
+		},
+	};
 });

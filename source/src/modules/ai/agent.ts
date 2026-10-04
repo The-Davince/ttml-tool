@@ -4,6 +4,7 @@ import {
         type AITurn,
         aiRunningAtom,
         aiTurnsAtom,
+        apiUrl,
         nextAIStepId,
         nextAITurnId,
 } from "$/modules/ai/states";
@@ -63,15 +64,16 @@ const buildSystemPrompt = (): string => {
 你可以调用工具完成实际操作（类似 MCP）。工具清单由系统自动注入。
 
 # 核心规则
-1. 行号、音节序号一律从 0 开始计数。
-2. 对歌词的任何修改必须通过工具调用完成，不要只是口头描述。
-3. 不确定当前歌词结构时，先调用 get_lyrics_info 查看。
-4. 假名标注：为汉字词提供正确的日语读音，kana 数组中每个元素是一个读音单元（拗音如「きゃ」「しゅ」算一个单元），使用平假名。多个音节用 batch_set_ruby 批量处理更高效。
-5. 罗马音：优先调用 auto_romaji 从假名自动转换；汉字没有假名时先标注假名再转换。
-6. 查歌曲信息/歌词原文/读音资料用 search_web；需要网页详细内容时用 read_page。
-7. QQ 音乐工具（优先推荐）：search_qq_music 搜歌（关键词只用歌名或只用歌手名，不要拼在一起），import_qq_lyric 用 songMid 一键导入官方逐字歌词（高保真：逐字时间轴/逐假名注音/逐词罗马音/翻译）。用户想找某首歌的歌词、或想快速铺时间轴时优先走这条链路。
-8. 一次可以发起多个工具调用，复杂任务分步执行。
-9. 完成修改后，简要总结做了什么。使用简体中文回复，简洁友好，不要输出 Markdown 标题。`;
+1. 【最重要】严格按用户当前请求行动，不要越权自作主张。用户只是问信息（例如“这首歌是谁唱的”“歌手生平/简介”“查一下某词的意思”）时，只用只读类工具（search_web / read_page / get_lyrics_info / search_qq_music）查证并直接回答，**绝不得擅自改动歌词文档**——不要导入/替换歌词（import_qq_lyric）、不要标注假名、不要生成罗马音（auto_romaji）。只有当用户明确要求进行制作/修改时，才动用写操作类工具。
+2. 行号、音节序号一律从 0 开始计数。
+3. 当确实需要修改歌词时，任何修改必须通过工具调用完成，不要只是口头描述。
+4. 不确定当前歌词结构时，先调用 get_lyrics_info 查看。
+5. 假名标注：为汉字词提供正确的日语读音，kana 数组中每个元素是一个读音单元（拗音如「きゃ」「しゅ」算一个单元），使用平假名。多个音节用 batch_set_ruby 批量处理更高效。
+6. 罗马音：优先调用 auto_romaji 从假名自动转换；汉字没有假名时先标注假名再转换。
+7. 查歌曲信息/歌词原文/读音资料用 search_web；需要网页详细内容时用 read_page。搜索务必克制、快速收敛：纯信息查询（“谁唱的”“歌手简介”“某词什么意思”）通常 1–2 次 search_web 就应足够，一旦拿到关键事实立即作答，不要为交叉验证而反复换关键词多轮搜索。若收到低相关提示，最多再简化关键词重试一次（去掉引号、只留歌名或歌手名），仍不理想就基于现有结果作答或改用 search_qq_music；切勿用同样的长查询反复重试。
+8. QQ 音乐工具（优先推荐）：search_qq_music 搜歌（关键词只用歌名或只用歌手名，不要拼在一起），import_qq_lyric 用 songMid 一键导入官方逐字歌词（高保真：逐字时间轴/逐假名注音/逐词罗马音/翻译）。仅当用户想找某首歌的歌词、或想快速铺时间轴时才走这条链路。
+9. 一次可以发起多个工具调用，复杂任务分步执行。
+10. 完成修改后，简要总结做了什么。使用简体中文回复，简洁友好；较长的回答可用 Markdown（加粗、列表、小标题）组织，界面已支持渲染。`;
 };
 
 /**
@@ -103,6 +105,23 @@ const pickMessage = (data: unknown): LLMMessage => {
         const message = choices?.[0]?.message;
         if (!message) throw new Error("AI 接口响应中缺少 choices[0].message");
         return message;
+};
+
+/** 从非 2xx 响应体里尽量提取可读错误（兼容 error / error.message / message 等形态） */
+const extractErrText = (data: unknown, status: number): string => {
+        const d = data as {
+                error?: unknown;
+                message?: unknown;
+                msg?: unknown;
+        };
+        if (typeof d?.error === "string") return d.error;
+        if (d?.error && typeof d.error === "object") {
+                const m = (d.error as { message?: string }).message;
+                if (m) return m;
+        }
+        if (typeof d?.message === "string") return d.message;
+        if (typeof d?.msg === "string") return d.msg;
+        return `AI 接口请求失败（HTTP ${status}）`;
 };
 
 const chatCompletion = async (
@@ -143,17 +162,14 @@ const chatCompletion = async (
                         throw new Error(`AI 接口返回了非 JSON 内容（HTTP ${resp.status}）`);
                 }
                 if (!resp.ok) {
-                        throw new Error(
-                                (data as { error?: string })?.error ??
-                                        `AI 接口请求失败（HTTP ${resp.status}）`,
-                        );
+                        throw new Error(extractErrText(data, resp.status));
                 }
                 return { message: pickMessage(data) };
         };
 
-        /** 通道二：本地后端代理 server.py /api/ai/chat */
+        /** 通道二：本地后端代理 server.py /api/ai/chat（带瞬态重试，更鲁棒） */
         const tryProxy = async (): Promise<{ message: LLMMessage }> => {
-                const resp = await fetch("/api/ai/chat", {
+                const resp = await fetch(apiUrl("/api/ai/chat"), {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -173,16 +189,17 @@ const chatCompletion = async (
                         throw new Error(`AI 接口返回了非 JSON 内容（HTTP ${resp.status}）`);
                 }
                 if (!resp.ok) {
-                        throw new Error(
-                                (data as { error?: string })?.error ??
-                                        `AI 接口请求失败（HTTP ${resp.status}）`,
-                        );
+                        throw new Error(extractErrText(data, resp.status));
                 }
                 return { message: pickMessage(data) };
         };
 
-        // 已确认需要走代理，或尚未配置可直连的 baseURL → 直接代理
-        if (directChannelOk === false || !settings.baseURL.trim()) {
+        // 强制仅走代理 / 已确认需要走代理 / 尚未配置可直连的 baseURL → 直接代理
+        if (
+                settings.useProxyOnly ||
+                directChannelOk === false ||
+                !settings.baseURL.trim()
+        ) {
                 return tryProxy();
         }
 
@@ -191,14 +208,281 @@ const chatCompletion = async (
         } catch (e) {
                 // 用户主动停止：原样抛出，交由上层处理中断
                 if (signal.aborted) throw e;
-                // 仅“传输层失败”（CORS / 网络不可达，浏览器抛 TypeError）才回落代理；
-                // tryDirect 内部因 HTTP 非 2xx / 非 JSON / 缺 message 抛出的 Error 不再重复请求。
-                if (e instanceof TypeError) {
-                        directChannelOk = false;
-                        return tryProxy();
-                }
-                throw e;
+                // CORS / 网络不可达（浏览器抛 TypeError）→ 永久标记需走代理
+                if (e instanceof TypeError) directChannelOk = false;
+                // 其余任何直连失败（含上游 HTTP 5xx、非 JSON 等瞬态问题）
+                // 都回落到带重试的后端代理，而不是直接把错误抛给用户。
+                return tryProxy();
         }
+};
+
+/* -------------------------------------------------------------------------
+ * 流式（SSE）支持：逐字拿到模型输出，让“思考”过程实时显示。
+ * 直连与代理两条通道均产出标准 OpenAI SSE 分片，用同一套解析器处理。
+ * ------------------------------------------------------------------------- */
+
+interface StreamDeltaToolCall {
+	index?: number;
+	id?: string;
+	type?: "function";
+	function?: { name?: string; arguments?: string };
+}
+interface StreamChoice {
+	delta?: { content?: string; role?: string; tool_calls?: StreamDeltaToolCall[] };
+	message?: { content?: string; tool_calls?: StreamDeltaToolCall[] };
+	finish_reason?: string;
+}
+interface StreamChunk {
+	choices?: StreamChoice[];
+	error?: unknown;
+}
+interface AccToolCall {
+	id: string;
+	type: "function";
+	function: { name: string; arguments: string };
+}
+interface StreamAcc {
+	content: string;
+	toolByIndex: Map<number, AccToolCall>;
+}
+
+const newAcc = (): StreamAcc => ({ content: "", toolByIndex: new Map() });
+
+/** 把一个 SSE 分片(或整段 message)累加进 acc; 内容增量时回调当前完整文本 */
+const applyChunkToAcc = (
+	chunk: StreamChunk,
+	acc: StreamAcc,
+	onContentDelta?: (full: string) => void,
+): void => {
+	const choice = chunk?.choices?.[0];
+	if (!choice) return;
+	// 兼容流式 delta 与非流式 message 两种形态
+	const d = choice.delta ?? choice.message;
+	if (!d) return;
+	if (typeof d.content === "string" && d.content) {
+		acc.content += d.content;
+		onContentDelta?.(acc.content);
+	}
+	(d.tool_calls ?? []).forEach((tc, i) => {
+		const idx = tc.index ?? i;
+		const slot: AccToolCall =
+			acc.toolByIndex.get(idx) ??
+			{ id: "", type: "function", function: { name: "", arguments: "" } };
+		if (tc.id) slot.id = tc.id;
+		if (tc.type) slot.type = tc.type;
+		const fn = tc.function ?? {};
+		if (fn.name) slot.function.name += fn.name;
+		if (fn.arguments) slot.function.arguments += fn.arguments;
+		acc.toolByIndex.set(idx, slot);
+	});
+};
+
+const finalizeAcc = (acc: StreamAcc): LLMMessage => {
+	const message: LLMMessage = { role: "assistant" };
+	if (acc.content) message.content = acc.content;
+	if (acc.toolByIndex.size) {
+		message.tool_calls = [...acc.toolByIndex.entries()]
+			.sort((a, b) => a[0] - b[0])
+			.map(([i, v]) => ({
+				id: v.id || `call_${i}_${Date.now().toString(36)}`,
+				type: "function" as const,
+				function: { name: v.function.name, arguments: v.function.arguments },
+			}));
+	}
+	return message;
+};
+
+/** 读取 Response 的 SSE 字节流, 按行解析 data: 分片 */
+const consumeSSE = async (
+	resp: Response,
+	acc: StreamAcc,
+	onContentDelta: ((full: string) => void) | undefined,
+	signal: AbortSignal,
+): Promise<void> => {
+	if (!resp.body) {
+		const text = await resp.text();
+		for (const raw of text.split("\n")) {
+			const line = raw.replace(/\r$/, "");
+			if (!line.startsWith("data:")) continue;
+			const payload = line.slice(5).trim();
+			if (payload === "[DONE]") return;
+			let chunk: StreamChunk;
+			try {
+				chunk = JSON.parse(payload) as StreamChunk;
+			} catch {
+				continue;
+			}
+			if (chunk?.error) throw new Error(String((chunk.error as { message?: string })?.message ?? chunk.error));
+			applyChunkToAcc(chunk, acc, onContentDelta);
+		}
+		return;
+	}
+	const reader = resp.body.getReader();
+	const dec = new TextDecoder();
+	let buf = "";
+	for (;;) {
+		if (signal.aborted) {
+			try {
+				await reader.cancel();
+			} catch {
+				/* ignore */
+			}
+			throw new DOMException("aborted", "AbortError");
+		}
+		const { value, done } = await reader.read();
+		if (done) break;
+		buf += dec.decode(value, { stream: true });
+		let nl: number;
+		while ((nl = buf.indexOf("\n")) >= 0) {
+			const line = buf.slice(0, nl).replace(/\r$/, "");
+			buf = buf.slice(nl + 1);
+			if (!line.startsWith("data:")) continue;
+			const payload = line.slice(5).trim();
+			if (payload === "[DONE]") return;
+			let chunk: StreamChunk;
+			try {
+				chunk = JSON.parse(payload) as StreamChunk;
+			} catch {
+				continue;
+			}
+			if (chunk?.error)
+				throw new Error(
+					String((chunk.error as { message?: string })?.message ?? chunk.error),
+				);
+			applyChunkToAcc(chunk, acc, onContentDelta);
+		}
+	}
+};
+
+/** 发起一次流式请求并把分片累加进 acc */
+const runStreamFetch = async (
+	url: string,
+	init: RequestInit,
+	acc: StreamAcc,
+	onContentDelta: ((full: string) => void) | undefined,
+	signal: AbortSignal,
+): Promise<void> => {
+	const resp = await fetch(url, { ...init, signal });
+	if (!resp.ok) {
+		let data: unknown;
+		try {
+			data = await resp.json();
+		} catch {
+			data = undefined;
+		}
+		throw new Error(extractErrText(data ?? {}, resp.status));
+	}
+	const ctype = resp.headers.get("Content-Type") || "";
+	if (ctype.includes("text/event-stream")) {
+		await consumeSSE(resp, acc, onContentDelta, signal);
+		return;
+	}
+	// 非 SSE(端点忽略 stream): 当作整段 JSON message 处理
+	const text = await resp.text();
+	try {
+		applyChunkToAcc(JSON.parse(text) as StreamChunk, acc, onContentDelta);
+	} catch {
+		throw new Error("AI 接口返回了无法解析的内容");
+	}
+};
+
+/**
+ * 流式 chat completion。与 chatCompletion 相同的直连/代理选择与探测缓存；
+ * onContentDelta 会携带“当前累计完整文本”用于实时渲染。任一流式环节失败
+ * 逐级回落：直连流式→代理流式→非流式 chatCompletion，保证不因流式不支持而中断。
+ */
+const chatCompletionStream = async (
+	settings: AISettings,
+	messages: LLMMessage[],
+	signal: AbortSignal,
+	onContentDelta?: (full: string) => void,
+): Promise<{ message: LLMMessage }> => {
+	const tools = getToolSchemas();
+	resetAIChannelProbe(settings.baseURL);
+	const body = {
+		model: settings.model,
+		temperature: settings.temperature,
+		stream: true,
+		messages,
+		...(tools.length ? { tools, tool_choice: "auto" } : {}),
+	};
+
+	const tryDirectStream = async (acc: StreamAcc): Promise<void> => {
+		await runStreamFetch(
+			buildChatEndpoint(settings.baseURL),
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					...(settings.apiKey
+						? { Authorization: `Bearer ${settings.apiKey}` }
+						: {}),
+				},
+				body: JSON.stringify(body),
+			},
+			acc,
+			onContentDelta,
+			signal,
+		);
+		directChannelOk = true;
+	};
+
+	const tryProxyStream = async (acc: StreamAcc): Promise<void> => {
+		await runStreamFetch(
+			apiUrl("/api/ai/chat/stream"),
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					baseURL: settings.baseURL,
+					apiKey: settings.apiKey,
+					model: settings.model,
+					temperature: settings.temperature,
+					messages,
+					tools,
+				}),
+			},
+			acc,
+			onContentDelta,
+			signal,
+		);
+	};
+
+	// 强制仅代理 / 已确认需代理 / 未配置可直连 baseURL → 直接代理流式
+	if (
+		settings.useProxyOnly ||
+		directChannelOk === false ||
+		!settings.baseURL.trim()
+	) {
+		const acc = newAcc();
+		try {
+			await tryProxyStream(acc);
+			return { message: finalizeAcc(acc) };
+		} catch (e) {
+			if (signal.aborted) throw e;
+			const { message } = await chatCompletion(settings, messages, signal);
+			return { message };
+		}
+	}
+
+	const acc = newAcc();
+	try {
+		await tryDirectStream(acc);
+		return { message: finalizeAcc(acc) };
+	} catch (e) {
+		if (signal.aborted) throw e;
+		if (e instanceof TypeError) directChannelOk = false;
+		// 直连流式失败 → 代理流式; 再失败 → 非流式兜底
+		const acc2 = newAcc();
+		try {
+			await tryProxyStream(acc2);
+			return { message: finalizeAcc(acc2) };
+		} catch (e2) {
+			if (signal.aborted) throw e2;
+			const { message } = await chatCompletion(settings, messages, signal);
+			return { message };
+		}
+	}
 };
 
 /** 更新当前轮次（不可变更新，保持 atom 引用变化） */
@@ -342,6 +626,7 @@ export async function runAgentTurn(
                 updateTurn(turn.id, (t) => ({
                         ...t,
                         ...patch,
+                        streaming: false,
                         status: patch.status ?? t.status,
                 }));
                 globalStore.set(aiRunningAtom, false);
@@ -357,10 +642,21 @@ export async function runAgentTurn(
                                 status: "running",
                         });
                         const thinkStart = performance.now();
-                        const { message } = await chatCompletion(
+                        const prevAnswer = turn.answer;
+                        let streamedContent = "";
+                        const { message } = await chatCompletionStream(
                                 settings,
                                 [{ role: "system", content: buildSystemPrompt() }, ...llmMessages],
                                 controller.signal,
+                                (full) => {
+                                        streamedContent = full;
+                                        // 本轮文本实时呈现为答案(若本轮其实是工具调用, 稍后回滚)
+                                        updateTurn(turn.id, (t) => ({
+                                                ...t,
+                                                answer: full,
+                                                streaming: true,
+                                        }));
+                                },
                         );
                         updateStep(turn.id, thinkStepId, {
                                 status: "done",
@@ -369,6 +665,12 @@ export async function runAgentTurn(
 
                         const toolCalls = extractToolCalls(message);
                         if (toolCalls.length > 0) {
+                                // 本轮为工具调用: 回滚本轮临时流式文本, 恢复上一轮已提交答案
+                                updateTurn(turn.id, (t) => ({
+                                        ...t,
+                                        answer: prevAnswer,
+                                        streaming: false,
+                                }));
                                 // 兜底解析出的文本调用不保留进正文，避免污染会话历史
                                 const assistantText = message.tool_calls?.length
                                         ? (message.content ?? "")
@@ -429,8 +731,8 @@ export async function runAgentTurn(
                                 continue;
                         }
 
-                        // 最终回答
-                        const answer = (message.content ?? "").trim();
+                        // 最终回答(流式已逐字呈现, 此处以完整文本为准收尾)
+                        const answer = (message.content ?? streamedContent ?? "").trim();
                         llmMessages.push({ role: "assistant", content: answer });
                         finish({ status: "done", answer });
                         return;
@@ -470,7 +772,7 @@ export async function testAIConnection(
         settings: AISettings,
 ): Promise<{ ok: boolean; message: string }> {
         try {
-                const resp = await fetch("/api/test-ai", {
+                const resp = await fetch(apiUrl("/api/test-ai"), {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({

@@ -38,6 +38,7 @@ import {
 	aiTurnsAtom,
 	isAIConfigured,
 } from "$/modules/ai/states";
+import Markdown from "./Markdown";
 import styles from "./AIAssistantPanel.module.css";
 
 /** 步骤行左侧的状态图标 */
@@ -173,7 +174,14 @@ const TurnView = ({ turn }: { turn: AITurn }) => {
 				<div className={styles.userBubble}>{turn.userText}</div>
 			</div>
 			<StepsCard turn={turn} />
-			{turn.answer && <div className={styles.answerBubble}>{turn.answer}</div>}
+			{turn.answer && (
+				<div className={styles.answerBubble}>
+					<Markdown text={turn.answer} />
+					{turn.streaming && (
+						<span className={styles.caret} aria-hidden="true" />
+					)}
+				</div>
+			)}
 			{turn.status === "error" && turn.error && !turn.answer && (
 				<div className={styles.errorCard}>
 					{t("ai.errorPrefix", "出错了：")}
@@ -235,6 +243,12 @@ const SettingsView = ({ onBack }: { onBack: () => void }) => {
 	const [baseURL, setBaseURL] = useState(settings.baseURL);
 	const [model, setModel] = useState(settings.model);
 	const [apiKey, setApiKey] = useState(settings.apiKey);
+	const [backendBaseURL, setBackendBaseURL] = useState(
+		settings.backendBaseURL ?? "",
+	);
+	const [useProxyOnly, setUseProxyOnly] = useState(
+		settings.useProxyOnly ?? false,
+	);
 	const [testing, setTesting] = useState(false);
 	const [testResult, setTestResult] = useState<{
 		ok: boolean;
@@ -251,7 +265,15 @@ const SettingsView = ({ onBack }: { onBack: () => void }) => {
 		setBaseURL(settings.baseURL);
 		setModel(settings.model);
 		setApiKey(settings.apiKey);
-	}, [settings.baseURL, settings.model, settings.apiKey]);
+		setBackendBaseURL(settings.backendBaseURL ?? "");
+		setUseProxyOnly(settings.useProxyOnly ?? false);
+	}, [
+		settings.baseURL,
+		settings.model,
+		settings.apiKey,
+		settings.backendBaseURL,
+		settings.useProxyOnly,
+	]);
 
 	const save = () => {
 		setSettings({
@@ -259,6 +281,8 @@ const SettingsView = ({ onBack }: { onBack: () => void }) => {
 			baseURL: baseURL.trim(),
 			model: model.trim(),
 			apiKey: apiKey.trim(),
+			backendBaseURL: backendBaseURL.trim(),
+			useProxyOnly,
 		});
 		toast.success(t("ai.saved", "已保存 AI 设置"));
 	};
@@ -271,6 +295,8 @@ const SettingsView = ({ onBack }: { onBack: () => void }) => {
 			baseURL: baseURL.trim(),
 			model: model.trim(),
 			apiKey: apiKey.trim(),
+			backendBaseURL: backendBaseURL.trim(),
+			useProxyOnly,
 		});
 		setTestResult(result);
 		setTesting(false);
@@ -343,6 +369,43 @@ const SettingsView = ({ onBack }: { onBack: () => void }) => {
 					value={apiKey}
 					onChange={(e) => setApiKey(e.target.value)}
 				/>
+			</div>
+
+			<div className={styles.field}>
+				<label className={styles.fieldLabel} htmlFor="ai-backend-url">
+					{t("ai.backendURLLabel", "后端代理地址 (server.py)")}
+				</label>
+				<input
+					id="ai-backend-url"
+					className={styles.fieldInput}
+					placeholder="留空或当前网页地址 = 同源 /api"
+					value={backendBaseURL}
+					onChange={(e) => setBackendBaseURL(e.target.value)}
+				/>
+				<span className={styles.fieldHint}>
+					{t(
+						"ai.backendURLHint",
+						"默认取当前网页地址（同源 server.py）；本地开发留空亦可（Vite 已把 /api 代理到 server.py）。若前端与后端不同源，在此填写后端完整地址（需后端开启 CORS）。",
+					)}
+				</span>
+			</div>
+
+			<div className={styles.field}>
+				<label className={styles.checkboxRow} htmlFor="ai-proxy-only">
+					<input
+						id="ai-proxy-only"
+						type="checkbox"
+						checked={useProxyOnly}
+						onChange={(e) => setUseProxyOnly(e.target.checked)}
+					/>
+					{t("ai.useProxyOnlyLabel", "始终通过后端代理（忽略直连）")}
+				</label>
+				<span className={styles.fieldHint}>
+					{t(
+						"ai.useProxyOnlyHint",
+						"直连端点担心偶发 HTTP 500 / 被浏览器 CORS 拦截时，勾选此项强制所有请求走带重试的后端代理，更稳定。",
+					)}
+				</span>
 			</div>
 
 			<div className={styles.settingsActions}>

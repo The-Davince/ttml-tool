@@ -29,10 +29,12 @@ import webbrowser
 import zlib
 import html as _html
 from html.parser import HTMLParser
-from http.client import responses as HTTP_RESPONSES
+from http.client import RemoteDisconnected, responses as HTTP_RESPONSES
 from http.server import SimpleHTTPRequestHandler
 from urllib import parse as urlparse
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+import xml.etree.ElementTree as ET
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 26013
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")
@@ -44,8 +46,12 @@ BROWSER_UA = (
 
 CHAT_TIMEOUT = 180          # LLM 生成可能较慢
 SEARCH_TIMEOUT = 20
+SEARCH_FETCH_TIMEOUT = 10   # 单个搜索引擎抓取超时(秒), 比默认更激进, 避免慢站点卡住整轮
+SEARCH_FETCH_RETRIES = 2    # 搜索抓取重试次数(含首次), 压低最坏情况尾延迟
 FETCH_TIMEOUT = 20
 MAX_PAGE_CHARS = 6000       # 返回给 AI 的网页正文长度上限
+SEARCH_TTL = 120            # 搜索结果内存缓存有效期(秒): AI 同轮/短时间重复查询可瞬时返回
+_search_cache: dict = {}    # key -> (过期时间戳, 结果 payload)
 
 # 与原版线上一致的安全头 (见 vercel.json / vite.config.ts dev server)
 SECURITY_HEADERS = {
@@ -227,80 +233,286 @@ def _is_ssl_verify_error(e: Exception) -> bool:
     return False
 
 
-def _urlopen_tls(req: Request, timeout: int):
-    """urlopen 包装: 证书校验失败时用免校验上下文重试"""
-    try:
-        return urlopen(req, timeout=timeout)
-    except Exception as e:
-        if _is_ssl_verify_error(e):
-            return urlopen(req, timeout=timeout, context=_SSL_RETRY_CTX)
-        raise
+# 瞬态网络错误 (Cloudflare 等边缘节点偶发 RST, 如 WinError 10054) 应重试;
+# 真实的 HTTP 4xx/5xx 响应 (HTTPError) 默认不重试, 仅重试少数边缘超时码。
+_TRANSIENT_CODES = (408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 524)
+_TRANSIENT_EXC = (
+    ConnectionResetError,
+    ConnectionAbortedError,
+    BrokenPipeError,
+    RemoteDisconnected,
+    TimeoutError,
+)
 
 
-def _fetch_html(url: str, data: bytes = None, timeout: int = SEARCH_TIMEOUT) -> str:
+def _is_transient_conn(e: Exception) -> bool:
+    if isinstance(e, HTTPError):
+        return e.code in _TRANSIENT_CODES
+    if isinstance(e, _TRANSIENT_EXC):
+        return True
+    if isinstance(e, URLError):
+        reason = e.reason
+        if isinstance(reason, _TRANSIENT_EXC):
+            return True
+        s = str(reason).upper()
+        return any(k in s for k in ("10054", "10053", "RESET", "ABORT", "REMOTE", "TIMED OUT"))
+    return False
+
+
+def _urlopen_tls(req: Request, timeout: int, retries: int = 3):
+    """urlopen 包装: 证书校验失败时改用免校验上下文; 瞬态连接错误重试几次
+
+    注: 每次重试都重建一个相同内容的 Request, 避免部分请求对象在一次失败后
+    内部状态 (如已发送的 body) 不可复用。
+    """
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        retry_req = Request(
+            req.full_url, data=req.data, headers=dict(req.headers),
+            method=req.get_method(),
+        )
+        try:
+            try:
+                return urlopen(retry_req, timeout=timeout)
+            except Exception as e:
+                if _is_ssl_verify_error(e):
+                    return urlopen(retry_req, timeout=timeout, context=_SSL_RETRY_CTX)
+                raise
+        except Exception as e:
+            last_exc = e
+            if _is_transient_conn(e) and attempt < retries - 1:
+                time.sleep(0.6 * (attempt + 1))
+                continue
+            raise
+    raise last_exc  # 理论上不可达
+
+
+def _fetch_html(url: str, data: bytes = None, timeout: int = SEARCH_TIMEOUT,
+                retries: int = 3) -> str:
     headers = {
         "User-Agent": BROWSER_UA,
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Accept": "text/html,application/xhtml+xml",
     }
     req = Request(url, data=data, headers=headers)
-    with _urlopen_tls(req, timeout=timeout) as resp:
+    with _urlopen_tls(req, timeout=timeout, retries=retries) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
 
-def do_web_search(query: str, max_results: int = 8) -> dict:
-    """多引擎搜索, 逐个回退, 返回结果与各引擎尝试详情"""
-    attempts = []
+def _parse_bing_rss(xml_text: str, max_results: int) -> list:
+    """解析 Bing RSS 输出: 干净的 title/link/description。
 
-    def attempt(engine: str, url: str, parser: HTMLParser, post: bool, cleaner) -> list:
+    相比 cn.bing.com 的 HTML 结果页, RSS 不会被首字词典/百科知识面板污染,
+    也不会把面包屑显示 URL 误当标题。"""
+    root = ET.fromstring(xml_text)
+    results = []
+    for it in root.findall("./channel/item"):
+        link = _decode_bing_url((it.findtext("link") or "").strip())
+        if not link.startswith("http"):
+            continue
+        title = _strip_url_prefix((it.findtext("title") or "").strip())
+        snippet = " ".join(
+            re.sub(r"<[^>]+>", "", it.findtext("description") or "").split()
+        )
+        results.append({"title": title, "url": link, "snippet": snippet})
+        if len(results) >= max_results:
+            break
+    return results
+
+
+def _parse_ddg_html(html: str, cleaner, max_results: int) -> list:
+    parser = DDGParser()
+    parser.feed(html)
+    results = []
+    links = getattr(parser, "_links", None) or []
+    snippets = parser._snippets
+    for i, link in enumerate(links):
+        url2 = cleaner(link.get("href", ""))
+        if not url2 or not url2.startswith("http"):
+            continue
+        if "duckduckgo.com" in urlparse.urlparse(url2).netloc:
+            continue
+        results.append(
+            {
+                "title": link.get("title", ""),
+                "url": url2,
+                "snippet": snippets[i] if i < len(snippets) else "",
+            }
+        )
+        if len(results) >= max_results:
+            break
+    return results
+
+
+# 汉字词典/字形/单字百科面板的识别特征。
+# 这类结果在 Bing 抓取版 SERP 里会占据多词中文查询的顶部, 挤掉真正相关内容。
+_DICT_DOMAINS = (
+    "zdic.net", "hgcha.com", "hanyuguoxue.com", "hanzipi.com", "zidian",
+    "danci", "cidian", "dict.cn", "iciba.com", "youdao.com", "wiktionary",
+)
+_DICT_MARKERS = (
+    "拼音", "部首", "笔画", "笔顺", "结构", "组词", "释义", "解释",
+    "汉语汉字", "维基词典", "汉字", "读音", "近义词", "反义词", "五笔",
+    "郑码", "仓颉", "四角号码", "Unicode",
+)
+
+
+def _is_dict_like(r: dict) -> bool:
+    """判断一条结果是否为汉字词典/字形/单字百科面板 (而非真正检索目标)。"""
+    blob = f"{r.get('title', '')} {r.get('snippet', '')}"
+    hit = sum(1 for m in _DICT_MARKERS if m in blob)
+    url = r.get("url", "")
+    if hit >= 2:
+        return True
+    if hit >= 1 and any(d in url for d in _DICT_DOMAINS):
+        return True
+    return False
+
+
+def _demote_dictionary(results: list, query: str) -> list:
+    """多词查询时，把汉字词典/字形/百科单字面板结果沉到底部。
+
+    仅当查询含≥ 2 个词时才降级（避免“周是什么意思”这类真正需要词典的查询被误伤）。"""
+    if len(query.split()) < 2 or len(results) < 2:
+        return results
+    good = [r for r in results if not _is_dict_like(r)]
+    if not good or len(good) == len(results):  # 全命中或全未命中 → 保持原序
+        return results
+    bad = [r for r in results if _is_dict_like(r)]
+    return good + bad
+
+
+def _dict_ratio(results: list) -> float:
+    """词典面板结果占比。多词查询下占比高 => Bing 把请求当成了单字词典查询(SERP 退化)。"""
+    if not results:
+        return 1.0
+    return sum(1 for r in results if _is_dict_like(r)) / len(results)
+
+
+def _distinctive_tokens(query: str) -> list:
+    """提取查询中的“实体性”关键词: 先取引号内短语, 再按空白分词,
+    只保留去标点后长度 >= 2 的词(单字最易触发首字词典退化, 不作为区分信号)。"""
+    quoted = re.findall(r"[\"“”『「]([^\"“”』」]+)[\"“”』」]", query)
+    bare = re.sub(r"[\"“”『「][^\"“”』」]*[\"“”』」]", " ", query)
+    toks = quoted + re.split(r"\s+", bare)
+    out = []
+    seen = set()
+    for t in toks:
+        c = re.sub(r"[^0-9A-Za-z\u3040-\u30ff\u4e00-\u9fff]", "", t)
+        if len(c) >= 2 and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def _coverage(results: list, query: str) -> float:
+    """区分性关键词在结果集(title+snippet+url)中的命中率。
+    命中率低 => 结果与查询实体不相干(如日文歌名查询返回中文“花”百科)。"""
+    dt = _distinctive_tokens(query)
+    if not dt:
+        return 1.0
+    blob = " ".join(
+        f"{r.get('title', '')} {r.get('snippet', '')} {r.get('url', '')}" for r in results
+    )
+    return sum(1 for t in dt if t in blob) / len(dt)
+
+
+def _badness(results: list, query: str) -> float:
+    """综合 SERP 质差分数: 词典污染与低相关性各占一半, 越低越好。"""
+    return 0.5 * _dict_ratio(results) + 0.5 * (1.0 - _coverage(results, query))
+
+
+def do_web_search(query: str, max_results: int = 8) -> dict:
+    """带内存缓存的搜索入口: 短时间内相同(查询, 条数)直接回缓存,
+    避免 AI 反复用同一关键词时重复抓取。仅缓存有结果的成功查询。"""
+    key = f"{query}|{max_results}"
+    now = time.time()
+    hit = _search_cache.get(key)
+    if hit and hit[0] > now:
+        out = dict(hit[1])
+        out["cached"] = True
+        return out
+    out = _do_web_search_core(query, max_results)
+    if out.get("results"):
+        _search_cache[key] = (now + SEARCH_TTL, out)
+        if len(_search_cache) > 128:  # 粗略清理过期项, 防无限增长
+            for k in [k for k, v in _search_cache.items() if v[0] <= now]:
+                _search_cache.pop(k, None)
+    return out
+
+
+def _do_web_search_core(query: str, max_results: int = 8) -> dict:
+    """多引擎搜索: 优先 Bing RSS。用“SERP 质差分数”(词典污染 + 低相关性) 判断是否退化,
+    退化时才试 &ensearch=1 国际索引, 且仅当它明显更相关才采纳(ensearch 对部分查询反而变差)。
+    国际站失败回退国内站, 最后退 DuckDuckGo。"""
+    attempts = []
+    q = urlparse.quote_plus(query)
+    count = max(10, min(max_results * 3, 50))
+    multi = len(query.split()) >= 2
+
+    def fetch_rss(host: str, ensearch: bool) -> list:
+        url = f"https://{host}/search?q={q}&format=rss&count={count}"
+        if ensearch:
+            url += "&ensearch=1"
+        return _parse_bing_rss(
+            _fetch_html(url, timeout=SEARCH_FETCH_TIMEOUT, retries=SEARCH_FETCH_RETRIES),
+            max_results,
+        )
+
+    # 1) Bing RSS: www(国际索引, 质量最好) → cn(国内兑底)
+    for base_engine, host in (("bing-rss", "www.bing.com"), ("bing-rss-cn", "cn.bing.com")):
         try:
-            data = urlparse.urlencode({"q": query}).encode() if post else None
-            html = _fetch_html(url, data=data)
-            parser.feed(html)
-            results = []
-            links = getattr(parser, "_links", None)
-            if links is not None:  # DDG
-                snippets = parser._snippets
-                for i, link in enumerate(links):
-                    url2 = cleaner(link.get("href", ""))
-                    title = link.get("title", "")
-                    if not url2 or not url2.startswith("http"):
-                        continue
-                    if "duckduckgo.com" in urlparse.urlparse(url2).netloc:
-                        continue
-                    results.append(
-                        {"title": title, "url": url2, "snippet": snippets[i] if i < len(snippets) else ""}
-                    )
-                    if len(results) >= max_results:
-                        break
-            else:  # Bing
-                for r in parser.results:
-                    results.append(
-                        {
-                            "title": _strip_url_prefix(r["title"]),
-                            "url": cleaner(r["url"]),
-                            "snippet": r.get("snippet", ""),
-                        }
-                    )
-                    if len(results) >= max_results:
-                        break
-            attempts.append({"engine": engine, "ok": len(results) > 0, "count": len(results)})
-            return results
+            results = fetch_rss(host, False)
+            attempts.append({"engine": base_engine, "ok": bool(results), "count": len(results)})
+        except Exception as e:
+            attempts.append({"engine": base_engine, "ok": False, "error": f"{type(e).__name__}: {e}"})
+            continue
+        if not results:
+            continue
+        engine_used = base_engine
+        base_bad = _badness(results, query)
+        # 多词查询且普通 SERP 明显退化(词典污染 或 关键词不命中) => 用 ensearch 重取国际索引
+        if multi and base_bad >= 0.45:
+            try:
+                alt = fetch_rss(host, True)
+                attempts.append({"engine": base_engine + "-ensearch", "ok": bool(alt), "count": len(alt)})
+                # 仅当 ensearch 确实明显更相关/更干净才采纳, 否则保留原结果
+                if alt and _badness(alt, query) <= base_bad - 0.1 and len(alt) >= 3:
+                    results = alt
+                    engine_used = base_engine + "-ensearch"
+            except Exception as e:
+                attempts.append({"engine": base_engine + "-ensearch", "ok": False, "error": f"{type(e).__name__}: {e}"})
+        results = _demote_dictionary(results, query)
+        final_bad = _badness(results, query)
+        out = {"engine": engine_used, "results": results, "attempts": attempts}
+        # 结果与查询实体低相关时主动提示, 避免 AI 拿着无关结果反复重试、空转时间
+        # (仅当查询能拆出 >=2 个区分性关键词时才判断, 无空格单串查询覆盖度不可靠)
+        if (
+            len(_distinctive_tokens(query)) >= 2
+            and final_bad >= 0.5
+            and _coverage(results, query) < 0.34
+        ):
+            out["relevance"] = "low"
+            out["hint"] = (
+                "这些结果可能与查询实体不相关(Bing 对部分中日文查询会退化为首字百科/词典)。"
+                "建议: 简化关键词、去掉引号, 或改用 search_qq_music 直接按歌名/歌手名查。"
+            )
+        return out
+
+    # 2) DuckDuckGo HTML 兑底 (海外网络下更稳)
+    data = urlparse.urlencode({"q": query}).encode()
+    for engine, url in (
+        ("duckduckgo-html", "https://html.duckduckgo.com/html/"),
+        ("duckduckgo-lite", "https://lite.duckduckgo.com/lite/"),
+    ):
+        try:
+            results = _parse_ddg_html(_fetch_html(url, data=data), _clean_ddg_url, max_results)
+            attempts.append({"engine": engine, "ok": bool(results), "count": len(results)})
+            if results:
+                return {"engine": engine, "results": _demote_dictionary(results, query), "attempts": attempts}
         except Exception as e:
             attempts.append({"engine": engine, "ok": False, "error": f"{type(e).__name__}: {e}"})
-            return []
 
-    q = urlparse.quote_plus(query)
-    engines = (
-        ("bing-cn", f"https://cn.bing.com/search?q={q}&count={max_results * 2}", BingParser, False, _decode_bing_url),
-        ("bing", f"https://www.bing.com/search?q={q}&count={max_results * 2}", BingParser, False, _decode_bing_url),
-        ("duckduckgo-lite", "https://lite.duckduckgo.com/lite/", DDGParser, True, _clean_ddg_url),
-        ("duckduckgo-html", "https://html.duckduckgo.com/html/", DDGParser, True, _clean_ddg_url),
-    )
-    for engine, url, parser_cls, post, cleaner in engines:
-        results = attempt(engine, url, parser_cls(), post, cleaner)
-        if results:
-            return {"engine": engine, "results": results, "attempts": attempts}
     return {"engine": None, "results": [], "attempts": attempts}
 
 
@@ -2079,6 +2291,66 @@ def convert_qrc_input(content, include_credits=False, decrypt_func=None):
 # AI 聊天代理 (OpenAI 兼容 /chat/completions)
 # ---------------------------------------------------------------------------
 
+def _collect_sse_stream(resp) -> dict:
+    """读取 OpenAI 兼容 SSE 流, 聚合为非流式的 choices[0].message 结构。
+
+    某些上游端点 (如基于 Cloudflare Worker 的免费代理) 只接受 stream=true,
+    非流式请求会被其自身校验拒绝 (500: Stream response Content-Type invalid)。
+    这里把增量 delta 的 content / tool_calls 重新拼成完整消息, 前端无感知。
+    """
+    content_parts: list[str] = []
+    tool_by_index: dict[int, dict] = {}
+    finish_reason = None
+    model_name = None
+    for raw_line in resp:
+        line = raw_line.decode("utf-8", errors="replace").strip()
+        if not line or not line.startswith("data:"):
+            continue
+        payload_str = line[5:].strip()
+        if payload_str == "[DONE]":
+            break
+        try:
+            chunk = json.loads(payload_str)
+        except Exception:
+            continue
+        if chunk.get("model"):
+            model_name = chunk["model"]
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue
+        choice = choices[0]
+        if choice.get("finish_reason"):
+            finish_reason = choice["finish_reason"]
+        delta = choice.get("delta") or {}
+        if delta.get("content"):
+            content_parts.append(delta["content"])
+        for tc in (delta.get("tool_calls") or []):
+            idx = tc.get("index", 0)
+            slot = tool_by_index.setdefault(
+                idx,
+                {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+            )
+            if tc.get("id"):
+                slot["id"] = tc["id"]
+            fn = tc.get("function") or {}
+            if fn.get("name"):
+                slot["function"]["name"] += fn["name"]
+            if fn.get("arguments"):
+                slot["function"]["arguments"] += fn["arguments"]
+    message: dict = {"role": "assistant"}
+    content = "".join(content_parts)
+    if content:
+        message["content"] = content
+    if tool_by_index:
+        message["tool_calls"] = [tool_by_index[i] for i in sorted(tool_by_index)]
+    result: dict = {
+        "choices": [{"message": message, "finish_reason": finish_reason or "stop"}],
+    }
+    if model_name:
+        result["model"] = model_name
+    return result
+
+
 def do_ai_chat(payload: dict, timeout: int = CHAT_TIMEOUT) -> dict:
     base_url = str(payload.get("baseURL", "")).strip().rstrip("/")
     api_key = str(payload.get("apiKey", "")).strip()
@@ -2116,20 +2388,86 @@ def do_ai_chat(payload: dict, timeout: int = CHAT_TIMEOUT) -> dict:
         headers["Authorization"] = f"Bearer {api_key}"
 
     req = Request(endpoint, data=json.dumps(body).encode(), headers=headers)
+    first_err_detail = ""
     try:
         with _urlopen_tls(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8", errors="replace"))
     except Exception as e:
-        detail = ""
         if hasattr(e, "read"):
             try:
-                detail = e.read().decode("utf-8", errors="replace")[:500]
+                first_err_detail = e.read().decode("utf-8", errors="replace")[:500]
             except Exception:
-                pass
-        msg = f"AI 接口请求失败: {e}"
-        if detail:
-            msg += f" | 上游响应: {detail}"
-        raise JSONError(502, msg)
+                first_err_detail = ""
+
+    # 非流式失败 → 回退流式 (部分端点仅支持 SSE, 见 _collect_sse_stream 说明)
+    stream_body = dict(body)
+    stream_body["stream"] = True
+    stream_headers = dict(headers)
+    stream_headers["Accept"] = "text/event-stream"
+    stream_req = Request(
+        endpoint, data=json.dumps(stream_body).encode(), headers=stream_headers
+    )
+    try:
+        with _urlopen_tls(stream_req, timeout=timeout) as resp:
+            ctype = resp.headers.get("Content-Type", "")
+            if "text/event-stream" in ctype or "stream" in ctype:
+                return _collect_sse_stream(resp)
+            # 上游其实给了非流式 JSON
+            return json.loads(resp.read().decode("utf-8", errors="replace"))
+    except Exception as e2:
+        detail2 = ""
+        if hasattr(e2, "read"):
+            try:
+                detail2 = e2.read().decode("utf-8", errors="replace")[:500]
+            except Exception:
+                detail2 = ""
+        combined = f"{e2}"
+        if detail2:
+            combined += f" | 上游响应(流式): {detail2}"
+        if first_err_detail:
+            combined += f" | 上游响应(非流式): {first_err_detail}"
+        raise JSONError(502, f"AI 接口请求失败（目标 {endpoint}）: {combined}")
+
+
+def _prepare_chat_upstream(payload: dict, stream: bool):
+    """校验并构造上游 chat/completions 请求要素 (端点/头/体)。
+    stream=True 时带上 Accept: text/event-stream。供流式代理端点复用。"""
+    base_url = str(payload.get("baseURL", "")).strip().rstrip("/")
+    api_key = str(payload.get("apiKey", "")).strip()
+    model = str(payload.get("model", "")).strip()
+    if not base_url:
+        raise JSONError(400, "未配置 API Base URL")
+    if not model:
+        raise JSONError(400, "未配置模型名称")
+    if not base_url.startswith(("http://", "https://")):
+        raise JSONError(400, "API Base URL 必须以 http(s):// 开头")
+    if not api_key and "localhost" not in base_url and "127.0.0.1" not in base_url:
+        raise JSONError(400, "未配置 API Key")
+    endpoint = (
+        base_url if base_url.endswith("/chat/completions")
+        else base_url + "/chat/completions"
+    )
+    body = {
+        "model": model,
+        "messages": payload.get("messages", []),
+        "stream": stream,
+    }
+    if payload.get("temperature") is not None:
+        body["temperature"] = float(payload["temperature"])
+    if payload.get("maxTokens"):
+        body["max_tokens"] = int(payload["maxTokens"])
+    if payload.get("tools"):
+        body["tools"] = payload["tools"]
+        body["tool_choice"] = payload.get("toolChoice", "auto")
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "amll-ttml-tool/1.0",
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    if stream:
+        headers["Accept"] = "text/event-stream"
+    return endpoint, headers, body
 
 
 def do_test_ai(payload: dict) -> dict:
@@ -2185,6 +2523,10 @@ class Handler(SimpleHTTPRequestHandler):
             if method != "POST":
                 raise JSONError(405, "API 仅支持 POST")
             body = self._read_json_body()
+            if path == "/api/ai/chat/stream":
+                # 流式代理: 逐块下发上游 SSE, 前端逐字显示“思考”过程
+                self._handle_ai_chat_stream(body)
+                return True
             if path == "/api/ai/chat":
                 result = do_ai_chat(body)
                 self._send_json(200, result)
@@ -2261,12 +2603,139 @@ class Handler(SimpleHTTPRequestHandler):
             return
         self._send_json(404, {"error": "Not Found"})
 
+    # ---- SSE 流式转发 ----
+    def _send_sse_head(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        try:
+            self.wfile.flush()
+        except Exception:
+            pass
+
+    def _send_sse_raw(self, text: str):
+        self.wfile.write(text.encode("utf-8"))
+        self.wfile.flush()
+
+    def _send_sse_event(self, obj):
+        self._send_sse_raw("data: " + json.dumps(obj, ensure_ascii=False) + "\n\n")
+
+    def _send_sse_done(self):
+        self._send_sse_raw("data: [DONE]\n\n")
+
+    def _emit_result_as_sse(self, data: dict):
+        """把一段非流式 chat 结果合成为标准 delta 事件下发, 保持前端解析统一。"""
+        msg = ((data.get("choices") or [{}])[0]).get("message", {}) or {}
+        delta: dict = {"role": "assistant"}
+        if msg.get("content"):
+            delta["content"] = msg["content"]
+        tcs = msg.get("tool_calls")
+        if tcs:
+            delta["tool_calls"] = [
+                {
+                    "index": i,
+                    "id": tc.get("id") or f"call_{i}",
+                    "type": "function",
+                    "function": {
+                        "name": (tc.get("function") or {}).get("name", ""),
+                        "arguments": (tc.get("function") or {}).get("arguments", ""),
+                    },
+                }
+                for i, tc in enumerate(tcs)
+            ]
+        self._send_sse_head()
+        self._send_sse_event({"choices": [{"delta": delta, "finish_reason": "stop"}]})
+        self._send_sse_done()
+
+    def _handle_ai_chat_stream(self, body: dict):
+        """把上游 OpenAI 兼容流式响应原样中继给浏览器 (标准 SSE delta 分片)。
+        上游若不支持流式(返回整段 JSON), 则合成单个 delta 事件下发, 保持前端解析统一。"""
+        try:
+            endpoint, headers, req_body = _prepare_chat_upstream(body, stream=True)
+        except JSONError as e:
+            self._send_json(e.status, {"error": e.message})
+            return
+        try:
+            resp = _urlopen_tls(
+                Request(endpoint, data=json.dumps(req_body).encode(), headers=headers),
+                timeout=CHAT_TIMEOUT,
+                retries=2,
+            )
+        except Exception as e:
+            detail = ""
+            if hasattr(e, "read"):
+                try:
+                    detail = e.read().decode("utf-8", errors="replace")[:300]
+                except Exception:
+                    detail = ""
+            # 流式通道连不上上游: 回退非流式 do_ai_chat (自带"非流式→流式"双重容错
+            # 与清晰错误文案)。仍失败则转发其错误; 成功则把结果合成为 SSE delta 下发,
+            # 保证前端拿到的始终是可统一解析的流式响应, 不泄露原始连接错误。
+            try:
+                result = do_ai_chat(body)
+            except JSONError as e2:
+                self._send_json(e2.status, {"error": e2.message})
+                return
+            except Exception as e2:
+                combined = f"{e2}"
+                if detail:
+                    combined += f" | 流式: {detail}"
+                self._send_json(
+                    502,
+                    {"error": f"AI 接口请求失败（目标 {endpoint}）: {combined}"},
+                )
+                return
+            self._emit_result_as_sse(result)
+            return
+        try:
+            with resp:
+                ctype = resp.headers.get("Content-Type", "")
+                if "text/event-stream" not in ctype and "stream" not in ctype:
+                    # 上游给了非流式 JSON → 合成为标准 delta 事件
+                    self._emit_result_as_sse(
+                        json.loads(resp.read().decode("utf-8", errors="replace"))
+                    )
+                    return
+                self._send_sse_head()
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                    if not line.startswith("data:"):
+                        continue
+                    self._send_sse_raw(line + "\n\n")
+                    if line.strip() == "data: [DONE]":
+                        break
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass
+        except Exception as e:
+            # 响应头已发出, 只能用 SSE 错误事件收尾
+            try:
+                self._send_sse_event({"error": f"流式转发中断: {e}"})
+                self._send_sse_done()
+            except Exception:
+                pass
+
+    def do_OPTIONS(self):
+        # CORS 预检：当前端把「后端代理地址」填成绝对 URL 时，会跨源直连本服务
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self):
         if self._handle_api("GET"):
             return
         super().do_GET()
 
     def end_headers(self):
+        # 允许前端跨源访问 API（设置面板填写 http://host:port 时）
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header(
+            "Access-Control-Allow-Headers", "Content-Type, Authorization"
+        )
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.send_header("Cross-Origin-Resource-Policy", "cross-origin")
         for k, v in SECURITY_HEADERS.items():
             self.send_header(k, v)
         # index.html / sw.js 不缓存, 保证版本更新即时生效; 其余资源带哈希可长缓存

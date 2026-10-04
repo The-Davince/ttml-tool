@@ -1,0 +1,97 @@
+/* 轻量 Markdown 渲染样式（供 AI 回答气泡内使用） */
+
+.md {
+	white-space: normal;
+	word-break: break-word;
+	overflow-wrap: anywhere;
+	font-size: 0.94em;
+	line-height: 1.65;
+}
+
+.md > *:first-child {
+	margin-top: 0;
+}
+
+.md > *:last-child {
+	margin-bottom: 0;
+}
+
+.p {
+	margin: 0 0 0.6em;
+}
+
+.heading {
+	margin: 0.7em 0 0.4em;
+	font-weight: 600;
+	line-height: 1.35;
+}
+
+.heading[data-level="1"] {
+	font-size: 1.22em;
+}
+.heading[data-level="2"] {
+	font-size: 1.12em;
+}
+.heading[data-level="3"] {
+	font-size: 1.05em;
+}
+.heading[data-level="4"] {
+	font-size: 1em;
+}
+
+.list {
+	margin: 0.2em 0 0.7em;
+	padding-left: 1.4em;
+}
+
+.list[data-ordered] {
+	list-style: decimal;
+}
+
+.list:not([data-ordered]) {
+	list-style: disc;
+}
+
+.list li {
+	margin: 0.18em 0;
+}
+
+.list li::marker {
+	color: var(--gray-9);
+}
+
+.code {
+	font-family: "Google Sans Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.88em;
+	background: var(--gray-a4);
+	color: var(--gray-12);
+	padding: 0.08em 0.36em;
+	border-radius: 5px;
+	border: 1px solid var(--gray-a5);
+}
+
+.link {
+	color: var(--accent-11);
+	text-decoration: none;
+	border-bottom: 1px solid var(--accent-a6);
+	cursor: pointer;
+}
+
+.link:hover {
+	border-bottom-color: var(--accent-9);
+}
+
+.quote {
+	margin: 0.4em 0;
+	padding: 0.2em 0.8em;
+	border-left: 3px solid var(--gray-a6);
+	color: var(--gray-11);
+	background: var(--gray-a2);
+	border-radius: 0 6px 6px 0;
+}
+
+.hr {
+	border: none;
+	border-top: 1px solid var(--gray-a6);
+	margin: 0.8em 0;
+}

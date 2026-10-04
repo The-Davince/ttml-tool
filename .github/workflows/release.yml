@@ -2,15 +2,17 @@
 
 on:
   push:
-    tags:
-      - "v*"
+    # 任意分支的每次提交都会触发编译，产物以工件形式在 Actions 页面可下载
+    branches: ["**"]
+    # 打 tag 时除编译外，额外发布到 GitHub Release
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,18 +29,36 @@ jobs:
         working-directory: source
         run: bun run build -- --outDir ../dist --emptyOutDir
 
-      - name: Package release zip
+      - name: Compute artifact name
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            SUFFIX="${GITHUB_REF_NAME}"
+          else
+            SAFE_REF="${GITHUB_REF_NAME//\//-}"
+            SUFFIX="${SAFE_REF}-${GITHUB_SHA:0:8}"
+          fi
+          echo "ARTIFACT=ttml-tool-${SUFFIX}" >> "$GITHUB_ENV"
+
+      - name: Package zip (dist + server.py)
         run: |
           mkdir release
           cp -r dist release/dist
           cp server.py release/server.py
           cp README.md release/README.md
           cd release
-          zip -r "../ttml-tool-${GITHUB_REF_NAME}.zip" .
+          zip -r "../${ARTIFACT}.zip" .
           cd ..
 
-      - name: Create GitHub Release
+      - name: Upload artifact (Actions 页面可下载)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ${{ env.ARTIFACT }}.zip
+          if-no-files-found: error
+
+      - name: Create GitHub Release (仅 tag 触发)
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: ttml-tool-*.zip
+          files: ${{ env.ARTIFACT }}.zip
           generate_release_notes: true

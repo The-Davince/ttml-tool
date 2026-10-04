@@ -203,23 +203,24 @@ export const ToolWindow = memo(() => {
 	);
 
 	return (
-		<motion.div
-			className={styles.windowShell}
-			initial={{ width: 0, opacity: 0 }}
-			animate={{ width: width, opacity: 1 }}
-			exit={{ width: 0, opacity: 0 }}
-			transition={dragging ? snapTransition : openTransition}
-		>
-			<div className={styles.windowInner} style={{ width: width }}>
-				<div
-					className={styles.resizeHandle}
-					data-dragging={dragging || undefined}
-					onPointerDown={onResizePointerDown}
-					role="separator"
-					aria-orientation="vertical"
-					aria-label={t("toolWindow.resize", "拖动调整宽度")}
-				/>
-				<header className={styles.tabBar}>
+		<div className={styles.windowWrap}>
+			<div
+				className={styles.resizeHandle}
+				data-dragging={dragging || undefined}
+				onPointerDown={onResizePointerDown}
+				role="separator"
+				aria-orientation="vertical"
+				aria-label={t("toolWindow.resize", "拖动调整宽度")}
+			/>
+			<motion.div
+				className={styles.windowShell}
+				initial={{ width: 0, opacity: 0 }}
+				animate={{ width: width, opacity: 1 }}
+				exit={{ width: 0, opacity: 0 }}
+				transition={dragging ? snapTransition : openTransition}
+			>
+				<div className={styles.windowInner} style={{ width: width }}>
+					<header className={styles.tabBar}>
 					<div
 						ref={tabsRowRef}
 						className={styles.tabsRow}
@@ -353,5 +354,6 @@ export const ToolWindow = memo(() => {
 				</div>
 			</div>
 		</motion.div>
+		</div>
 	);
 });
