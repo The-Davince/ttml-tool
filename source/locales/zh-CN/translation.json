@@ -222,7 +222,7 @@
       "title": "工具窗口",
       "enable": "启用工具窗口",
       "desc": "在界面右侧打开带浏览器式标签页的工具窗口，可在其中添加预览等标签页。",
-      "fontSize": "工具窗口字号",
+      "fontSize": "工具窗口歌词预览字号",
       "fontSizeDesc": "调整工具窗口中歌词预览的字体大小，开启自动后跟随页面尺寸缩放。",
       "fontSizeAuto": "自动字号",
       "lineClickToggle": "点击歌词行切换窗口",
@@ -761,7 +761,11 @@
       "backflowDetail": "开始时间 ({startTime}) 早于前一个音节的结束时间 ({prevEndTime})",
       "backflowSelfDetail": "结束时间 ({endTime}) 早于开始时间 ({startTime})",
       "detectedAt": "检测于 {time}",
-      "resolvedLabel": "已修复"
+      "resolvedLabel": "已修复",
+      "guardTitle": "检测到音节倒流",
+      "guardCount": "共 {n} 处",
+      "guardHint": "修复以下音节的时间倒流后即可正常预览；点击任意一条可跳转到对应音节。",
+      "guardDesc": "当前歌词存在 {n} 处音节时间倒流，修复后才能正常预览，是否前往修复第一处？"
     },
     "history": {
       "title": "历史"

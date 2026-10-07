@@ -10,8 +10,9 @@ import { useTranslation } from "react-i18next";
 import {
 	backflowUnitsAtom,
 	type BackflowUnitInfo,
+	getDisplayLineNumber,
+	locateUnit,
 } from "$/modules/lyric-editor/utils/backflow";
-import { parseRubySelectionId } from "$/modules/lyric-editor/utils/lyric-states";
 import {
 	lyricLinesAtom,
 	selectedLinesAtom,
@@ -36,41 +37,6 @@ interface PanelMessage {
 	wordIndex: number;
 	rubyIndex?: number;
 }
-
-/**
- * 计算与大纲面板一致的显示行号（背景行沿用上一行的行号，首行从 1 开始）
- */
-const getDisplayLineNumber = (lines: { isBG: boolean }[], index: number) => {
-	let number = 0;
-	for (let i = 0; i <= index; i++) {
-		if (!i || !lines[i].isBG) number++;
-	}
-	return number;
-};
-
-/**
- * 在当前文档中查找同步单元所属的行与单词位置
- */
-const locateUnit = (
-	lyricLines: { id: string; words: { id: string }[] }[],
-	unitId: string,
-): { lineIndex: number; wordIndex: number; rubyIndex?: number } | undefined => {
-	const parsed = parseRubySelectionId(unitId);
-	for (let li = 0; li < lyricLines.length; li++) {
-		const line = lyricLines[li];
-		for (let wi = 0; wi < line.words.length; wi++) {
-			const word = line.words[wi];
-			if (parsed) {
-				if (word.id === parsed.wordId) {
-					return { lineIndex: li, wordIndex: wi, rubyIndex: parsed.rubyIndex };
-				}
-			} else if (word.id === unitId) {
-				return { lineIndex: li, wordIndex: wi };
-			}
-		}
-	}
-	return undefined;
-};
 
 export const MessagesPanel = memo(() => {
 	const { t } = useTranslation();

@@ -1,7 +1,7 @@
 import { atom } from "jotai";
 import { lyricLinesAtom } from "$/states/main.ts";
 import type { LyricLine } from "$/types/ttml";
-import { buildRubySelectionId } from "./lyric-states.ts";
+import { buildRubySelectionId, parseRubySelectionId } from "./lyric-states.ts";
 
 /**
  * 音节时间倒流检测工具
@@ -139,6 +139,46 @@ export function isWordBackflowing(line: LyricLine, wordIndex: number): boolean {
 		if (info.wordIndex === wordIndex) return true;
 	}
 	return false;
+}
+
+/**
+ * 计算与大纲面板一致的显示行号（背景行沿用上一行的行号，首行从 1 开始）
+ */
+export function getDisplayLineNumber(
+	lines: { isBG: boolean }[],
+	index: number,
+): number {
+	let number = 0;
+	for (let i = 0; i <= index; i++) {
+		if (!i || !lines[i].isBG) number++;
+	}
+	return number;
+}
+
+/**
+ * 在当前文档中查找同步单元所属的行与单词位置
+ *
+ * unitId 为普通单词 id 或假名选择器 id（buildRubySelectionId）
+ */
+export function locateUnit(
+	lyricLines: LyricLine[],
+	unitId: string,
+): { lineIndex: number; wordIndex: number; rubyIndex?: number } | undefined {
+	const parsed = parseRubySelectionId(unitId);
+	for (let li = 0; li < lyricLines.length; li++) {
+		const line = lyricLines[li];
+		for (let wi = 0; wi < line.words.length; wi++) {
+			const word = line.words[wi];
+			if (parsed) {
+				if (word.id === parsed.wordId) {
+					return { lineIndex: li, wordIndex: wi, rubyIndex: parsed.rubyIndex };
+				}
+			} else if (word.id === unitId) {
+				return { lineIndex: li, wordIndex: wi };
+			}
+		}
+	}
+	return undefined;
 }
 
 /**

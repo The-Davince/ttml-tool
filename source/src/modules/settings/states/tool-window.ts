@@ -39,10 +39,10 @@ export const TOOL_WINDOW_MIN_FONT_SIZE = 14;
 export const TOOL_WINDOW_MAX_FONT_SIZE = 56;
 export const TOOL_WINDOW_DEFAULT_FONT_SIZE = 22;
 
-/** 工具窗口歌词字号（像素，0 = 自动跟随页面尺寸），持久化 */
+/** 工具窗口歌词字号（像素，0 = 自动跟随页面尺寸），持久化，默认开启自动缩放 */
 export const toolWindowFontSizeAtom = atomWithStorage(
         "toolWindowFontSize",
-        TOOL_WINDOW_DEFAULT_FONT_SIZE,
+        0,
 );
 
 /** 当前打开的标签页列表（会话级，关闭窗口时清空） */

@@ -222,7 +222,7 @@
       "title": "Tool Window",
       "enable": "Enable tool window",
       "desc": "Open a browser-style tabbed tool window on the right side of the interface, where tabs such as Preview can be added.",
-      "fontSize": "Tool window font size",
+      "fontSize": "Tool window lyric preview font size",
       "fontSizeDesc": "Adjust the font size of lyric previews in the tool window. When auto is on, it scales with the page size.",
       "fontSizeAuto": "Auto font size",
       "lineClickToggle": "Toggle window by clicking lyrics line",
@@ -761,7 +761,11 @@
       "backflowDetail": "Start time ({startTime}) is earlier than the end time of the previous syllable ({prevEndTime})",
       "backflowSelfDetail": "End time ({endTime}) is earlier than its own start time ({startTime})",
       "detectedAt": "Detected at {time}",
-      "resolvedLabel": "Fixed"
+      "resolvedLabel": "Fixed",
+      "guardTitle": "Time Backflow Detected",
+      "guardCount": "{n} found",
+      "guardHint": "Fix the backflowing syllables below to restore the preview; click any entry to jump to it.",
+      "guardDesc": "The lyrics have {n} syllable time backflow(s). Preview is unavailable until they are fixed. Jump to the first one?"
     },
     "history": {
       "title": "History"

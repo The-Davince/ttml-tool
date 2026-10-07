@@ -1,0 +1,66 @@
+.guard {
+	height: 100%;
+	overflow: hidden;
+	background: var(--gray-1);
+}
+
+.inner {
+	height: 100%;
+	min-height: 0;
+}
+
+.header {
+	color: var(--red-11);
+}
+
+.warnIcon {
+	color: var(--red-11);
+	flex: 0 0 auto;
+}
+
+.title {
+	color: var(--red-11);
+}
+
+.list {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	padding-right: var(--space-1);
+}
+
+.row {
+	cursor: pointer;
+	border: 1px solid var(--gray-a5);
+	border-radius: var(--radius-3);
+	padding: var(--space-2) var(--space-3);
+	background: var(--gray-2);
+	transition:
+		background 0.15s ease,
+		border-color 0.15s ease;
+	outline: none;
+}
+
+.row:hover {
+	background: var(--gray-3);
+	border-color: var(--accent-a6);
+}
+
+.row:focus-visible {
+	border-color: var(--accent-8);
+	box-shadow: 0 0 0 2px var(--accent-a3);
+}
+
+.rowText {
+	font-size: var(--font-size-2);
+	color: var(--gray-12);
+}
+
+.rowDetail {
+	margin-top: 2px;
+	font-size: var(--font-size-1);
+	color: var(--gray-11);
+}

@@ -211,7 +211,7 @@ export const SettingsPersonalizationTab = ({
 								icon={<TextFontSize24Regular />}
 								title={t(
 									"settings.toolWindow.fontSize",
-									"工具窗口字号",
+									"工具窗口歌词预览字号",
 								)}
 								description={t(
 									"settings.toolWindow.fontSizeDesc",
