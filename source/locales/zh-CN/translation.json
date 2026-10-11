@@ -309,6 +309,7 @@
     "deleteWords": "删除单词",
     "bgLyric": "背景歌词",
     "duetLyric": "对唱歌词",
+    "syncWithMainTimeline": "与主歌词时间轴相同",
     "insertLineBefore": "在前插入新行",
     "insertLineAfter": "在后插入新行",
     "copyLine": "复制行",

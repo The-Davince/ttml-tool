@@ -309,6 +309,7 @@
     "deleteWords": "Delete {count, plural, one {word} other {words}}",
     "bgLyric": "Background line",
     "duetLyric": "Duet line",
+    "syncWithMainTimeline": "Same timeline as main line",
     "insertLineBefore": "Insert new line before",
     "insertLineAfter": "Insert new line after",
     "copyLine": "Duplicate {count, plural, one {line} other {lines}}",
