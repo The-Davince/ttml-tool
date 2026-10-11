@@ -149,13 +149,14 @@ export const SyncKeyBinding: FC = () => {
 	);
 
 	const moveToNextWordBase = useCallback(
-		(play: boolean): boolean => {
+		(play: boolean, skipFollowEnabledLines = false): boolean => {
 			const location = getCurrentLocation(store);
 			if (!location) return false;
 			const nextWord = findNextWord(
 				location.lines,
 				location.lineIndex,
 				location.syncIndex,
+				skipFollowEnabledLines,
 			);
 			if (!nextWord) return false;
 			store.set(selectedWordsAtom, new Set([nextWord.unit.id]));
@@ -173,6 +174,10 @@ export const SyncKeyBinding: FC = () => {
 	);
 	const moveToNextWordAndPlay = useCallback(
 		() => moveToNextWordBase(true),
+		[moveToNextWordBase],
+	);
+	const moveToNextWordSkipFollow = useCallback(
+		() => moveToNextWordBase(false, true),
 		[moveToNextWordBase],
 	);
 
@@ -368,7 +373,7 @@ export const SyncKeyBinding: FC = () => {
 						reconcileFollowMainTimeline(state);
 					}),
 				);
-				moveToNextWord();
+				moveToNextWordSkipFollow();
 				return;
 			}
 
@@ -385,6 +390,7 @@ export const SyncKeyBinding: FC = () => {
 						state.lyricLines,
 						location.lineIndex,
 						location.syncIndex,
+						true,
 					);
 					if (nextWord) {
 						if (curLine !== nextWord.line) {
@@ -401,7 +407,7 @@ export const SyncKeyBinding: FC = () => {
 					reconcileFollowMainTimeline(state);
 				}),
 			);
-			moveToNextWord();
+			moveToNextWordSkipFollow();
 
 			// 开了智能首字后，连轴打到下一行时跳过智能首字
 			if (smartFirstWord) {
@@ -411,7 +417,7 @@ export const SyncKeyBinding: FC = () => {
 				}
 			}
 		},
-		[store, moveToNextWord],
+		[store, moveToNextWordSkipFollow],
 	);
 	useKeyBindingAtom(
 		keySyncEndAtom,

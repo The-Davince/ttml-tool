@@ -26,6 +26,10 @@ export const LyricLineMenu = ({ lineIndex, syncMode = false}: { lineIndex: numbe
 	const followCandidates = selectedLineObjs.filter(
 		(line) => line.isBG || line.isDuet,
 	);
+	const clickedLine = lineObjs.lyricLines[lineIndex];
+	const clickedCanFollow = Boolean(
+		clickedLine && (clickedLine.isBG || clickedLine.isDuet),
+	);
 	const [Bgchecked, setBgChecked] = React.useState(() => {
 		if (selectedLineObjs.every((line) => line.isBG)) return true;
 		else if (selectedLineObjs.every((line) => !line.isBG)) return false;
@@ -112,24 +116,6 @@ export const LyricLineMenu = ({ lineIndex, syncMode = false}: { lineIndex: numbe
 		}
 	}
 
-	if (syncMode) {
-		const clickedLine = lineObjs.lyricLines[lineIndex];
-		const canFollow = Boolean(
-			clickedLine && (clickedLine.isBG || clickedLine.isDuet),
-		);
-		return (
-			<>
-				<ContextMenu.CheckboxItem
-					checked={FollowChecked}
-					onCheckedChange={followOnCheck}
-					disabled={!canFollow}
-				>
-					{t("contextMenu.syncWithMainTimeline", "与主歌词时间轴相同")}
-				</ContextMenu.CheckboxItem>
-			</>
-		);
-	}
-
 	return (
 		<>
 			<ContextMenu.CheckboxItem checked={Bgchecked} onCheckedChange={bgOnCheck}>
@@ -144,7 +130,9 @@ export const LyricLineMenu = ({ lineIndex, syncMode = false}: { lineIndex: numbe
 			<ContextMenu.CheckboxItem
 				checked={FollowChecked}
 				onCheckedChange={followOnCheck}
-				disabled={followCandidates.length === 0}
+				disabled={
+					syncMode ? !clickedCanFollow : followCandidates.length === 0
+				}
 			>
 				{t("contextMenu.syncWithMainTimeline", "与主歌词时间轴相同")}
 			</ContextMenu.CheckboxItem>

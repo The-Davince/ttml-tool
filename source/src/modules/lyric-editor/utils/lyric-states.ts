@@ -219,6 +219,7 @@ export function findNextWord(
 	lyricLines: LyricLine[],
 	lineIndex: number,
 	syncIndex: number,
+	skipFollowEnabledLines = false,
 ):
 	| {
 			unit: SyncWordUnit;
@@ -241,11 +242,14 @@ export function findNextWord(
 	}
 	const nextLineIndex = lyricLines
 		.slice(lineIndex + 1)
-		.findIndex(
-			(nextLine) =>
-				isSynchronizableLine(nextLine) &&
-				getSynchronizableUnits(nextLine).length > 0,
-		);
+		.findIndex((nextLine, offset) => {
+			if (!isSynchronizableLine(nextLine) || getSynchronizableUnits(nextLine).length === 0) return false;
+			if (!skipFollowEnabledLines) return true;
+			return (
+				!nextLine.followMainTimeline ||
+				lineIndex + 1 + offset === lyricLines.length - 1
+			);
+		});
 	if (nextLineIndex === -1) return;
 	const absoluteIndex = lineIndex + 1 + nextLineIndex;
 	const nextLine = lyricLines[absoluteIndex];
