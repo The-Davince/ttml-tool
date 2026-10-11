@@ -22,6 +22,7 @@ export interface AmllLyricLine {
 	isDuet: boolean;
 	startTime: number;
 	endTime: number;
+	followMainTimeline?: boolean;
 }
 
 export interface AmllMetadata {

@@ -457,6 +457,18 @@ export function ttmlToAmll(
                 };
         });
 
+        const normalizedText = normalizeRubyTextContainers(ttmlContent);
+        const followMarkedLines = extractFollowTimelineMarkers(
+                normalizedText,
+                processedLyricLines.length,
+        );
+        if (followMarkedLines.size > 0) {
+                for (const lineIndex of followMarkedLines) {
+                        const line = processedLyricLines[lineIndex];
+                        if (line) line.followMainTimeline = true;
+                }
+        }
+
         return {
                 success: true,
                 data: {
@@ -503,6 +515,7 @@ function normalizeExportLine(line: AppLyricLine): AmllLyricLine {
                 isDuet: line.isDuet,
                 startTime: line.startTime,
                 endTime: line.endTime,
+                followMainTimeline: line.followMainTimeline,
         };
 }
 
@@ -579,6 +592,67 @@ export function isLineTimingLyrics(
         );
 }
 
+const FOLLOW_MAIN_TIMELINE_ATTR = "amll:followMainTimeline";
+
+interface FollowMarkerElement {
+        kind: "line" | "bg";
+        tagStart: number;
+        tagEnd: number;
+        selfClose: boolean;
+}
+
+function scanFollowMarkerElements(ttml: string): FollowMarkerElement[] {
+        const elements: FollowMarkerElement[] = [];
+        const tagRe =
+                /<(?:p\b[^>]*|span\b(?=[^>]*ttm:role="x-bg")[^>]*)>/g;
+        for (let m = tagRe.exec(ttml); m !== null; m = tagRe.exec(ttml)) {
+                const raw = m[0];
+                elements.push({
+                        kind: raw.startsWith("<p") ? "line" : "bg",
+                        tagStart: m.index,
+                        tagEnd: m.index + raw.length,
+                        selfClose: raw.endsWith("/>"),
+                });
+        }
+        return elements;
+}
+
+function injectFollowTimelineMarkers(
+        ttml: string,
+        lines: AmllLyricLine[],
+): string {
+        const elements = scanFollowMarkerElements(ttml);
+        if (elements.length !== lines.length) return ttml;
+        const edits: Array<{ pos: number; text: string }> = [];
+        for (let i = 0; i < lines.length; i++) {
+                if (!lines[i].followMainTimeline) continue;
+                const el = elements[i];
+                const insertPos = el.tagEnd - (el.selfClose ? 2 : 1);
+                edits.push({ pos: insertPos, text: ` ${FOLLOW_MAIN_TIMELINE_ATTR}="true"` });
+        }
+        if (edits.length === 0) return ttml;
+        edits.sort((a, b) => b.pos - a.pos);
+        let out = ttml;
+        for (const e of edits) {
+                out = out.slice(0, e.pos) + e.text + out.slice(e.pos);
+        }
+        return out;
+}
+
+function extractFollowTimelineMarkers(
+        ttml: string,
+        lineCount: number,
+): Set<number> {
+        const elements = scanFollowMarkerElements(ttml);
+        const marked = new Set<number>();
+        if (elements.length !== lineCount) return marked;
+        for (let i = 0; i < elements.length; i++) {
+                const tag = ttml.slice(elements[i].tagStart, elements[i].tagEnd);
+                if (tag.includes(FOLLOW_MAIN_TIMELINE_ATTR)) marked.add(i);
+        }
+        return marked;
+}
+
 /**
  * 便捷方法，将 AMLL 格式的歌词和元数据生成为 TTML 字符串
  *
@@ -595,7 +669,7 @@ export function amllToTTML(
 ): Result<string> {
         const processedAmllResult = postProcessLyricLines(amllResult);
         const lineTiming = isLineTimingLyrics(amllResult);
-        return rawAmllToTtml(
+        const result = rawAmllToTtml(
                 processedAmllResult,
                 options,
                 withDefaultGeneratorConfig({
@@ -603,6 +677,14 @@ export function amllToTTML(
                         ...config,
                 }),
         ) as Result<string>;
+        if (!result.success) return result;
+        return {
+                ...result,
+                data: injectFollowTimelineMarkers(
+                        result.data,
+                        processedAmllResult.lyricLines,
+                ),
+        };
 }
 
 /**
