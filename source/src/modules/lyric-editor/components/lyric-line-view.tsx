@@ -351,7 +351,6 @@ export const LyricLineView: FC<{
 	);
 	const originalEndTimeRef = useRef<number | null>(null);
 	const originalNextStartTimeRef = useRef<number | null>(null);
-	const previousSelectionRef = useRef<Set<string> | null>(null);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: 用于呈现时间戳更新效果
 	useEffect(() => {
@@ -525,23 +524,10 @@ export const LyricLineView: FC<{
 			)}
 			<ContextMenu.Root
 				onOpenChange={(opened) => {
-					if (opened) {
-						if (toolMode === ToolMode.Edit) {
-							if (!store.get(selectedLinesAtom).has(line.id)) {
-								store.set(selectedLinesAtom, new Set([line.id]));
-							}
-						} else {
-							previousSelectionRef.current = store.get(
-								selectedLinesAtom,
-							);
+					if (opened && toolMode === ToolMode.Edit) {
+						if (!store.get(selectedLinesAtom).has(line.id)) {
 							store.set(selectedLinesAtom, new Set([line.id]));
 						}
-					} else if (
-						toolMode !== ToolMode.Edit &&
-						previousSelectionRef.current
-					) {
-						store.set(selectedLinesAtom, previousSelectionRef.current);
-						previousSelectionRef.current = null;
 					}
 				}}
 			>
@@ -777,7 +763,7 @@ export const LyricLineView: FC<{
 					</Flex>
 				</ContextMenu.Trigger>
 				<ContextMenu.Content>
-					<LyricLineMenu lineIndex={lineIndex} />
+					<LyricLineMenu lineIndex={lineIndex} syncMode={toolMode === ToolMode.Sync} />
 				</ContextMenu.Content>
 			</ContextMenu.Root>
 			{enableInsert && (

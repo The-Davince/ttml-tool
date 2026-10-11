@@ -3,6 +3,7 @@ import init, {
 	initThreadPool,
 	SpectrogramConfig,
 } from "$/modules/spectrogram/vendor";
+import { acquireOpfsAccessHandle } from "$/modules/ffmpeg/worker/opfs-lock";
 import type { SpectrogramWorkerScope } from "$/modules/spectrogram/workers/types";
 import { spectrogramLogger } from "../logger";
 
@@ -55,8 +56,9 @@ ctx.onmessage = async (event) => {
 
 				if (opfsAccessHandle) {
 					opfsAccessHandle.close();
+					opfsAccessHandle = null;
 				}
-				opfsAccessHandle = await fileHandle.createSyncAccessHandle();
+				opfsAccessHandle = await acquireOpfsAccessHandle(fileHandle,opfsChannel);
 
 				ctx.postMessage({ type: "INIT_COMPLETE" });
 			} catch (e) {

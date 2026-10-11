@@ -12,7 +12,7 @@ import { type LyricLine, newLyricLine, newLyricWord } from "$/types/ttml";
 
 const selectedLinesSizeAtom = atom((get) => get(selectedLinesAtom).size);
 
-export const LyricLineMenu = ({ lineIndex }: { lineIndex: number }) => {
+export const LyricLineMenu = ({ lineIndex, syncMode = false}: { lineIndex: number; syncMode?: boolean; }) => {
 	const { t } = useTranslation();
 
 	const selectedLinesSize = useAtomValue(selectedLinesSizeAtom);
@@ -37,6 +37,14 @@ export const LyricLineMenu = ({ lineIndex }: { lineIndex: number }) => {
 		else return "indeterminate" as const;
 	});
 	const [FollowChecked, setFollowChecked] = React.useState(() => {
+		if (syncMode) {
+			const clicked = lineObjs.lyricLines[lineIndex];
+			return Boolean(
+				clicked &&
+					(clicked.isBG || clicked.isDuet) &&
+					clicked.followMainTimeline,
+			);
+		}
 		if (followCandidates.length === 0) return false;
 		if (followCandidates.every((line) => line.followMainTimeline)) return true;
 		else if (followCandidates.every((line) => !line.followMainTimeline))
@@ -77,21 +85,49 @@ export const LyricLineMenu = ({ lineIndex }: { lineIndex: number }) => {
 	function followOnCheck(checked: boolean) {
 		setFollowChecked(checked);
 		editLyricLines((state) => {
+			if (syncMode) {
+				applyFollowFlag(state.lyricLines, lineIndex, checked);
+				return;
+			}
 			state.lyricLines.forEach((line, index) => {
 				if (!line.isBG && !line.isDuet) return;
 				if (!selectedLines.has(line.id)) return;
-				if (checked) {
-					const mainIndex = findMainLineIndex(state.lyricLines, index);
-					if (mainIndex === null) return;
-					const mainLine = state.lyricLines[mainIndex];
-					if (!mainLine) return;
-					copyTimelineFromMain(line, mainLine);
-					line.followMainTimeline = true;
-				} else {
-					line.followMainTimeline = false;
-				}
+				applyFollowFlag(state.lyricLines, index, checked);
 			});
 		});
+	}
+
+	function applyFollowFlag(lines: LyricLine[], index: number, checked: boolean) {
+		const line = lines[index];
+		if (!line || (!line.isBG && !line.isDuet)) return;
+		if (checked) {
+			const mainIndex = findMainLineIndex(lines, index);
+			if (mainIndex === null) return;
+			const mainLine = lines[mainIndex];
+			if (!mainLine) return;
+			copyTimelineFromMain(line, mainLine);
+			line.followMainTimeline = true;
+		} else {
+			line.followMainTimeline = false;
+		}
+	}
+
+	if (syncMode) {
+		const clickedLine = lineObjs.lyricLines[lineIndex];
+		const canFollow = Boolean(
+			clickedLine && (clickedLine.isBG || clickedLine.isDuet),
+		);
+		return (
+			<>
+				<ContextMenu.CheckboxItem
+					checked={FollowChecked}
+					onCheckedChange={followOnCheck}
+					disabled={!canFollow}
+				>
+					{t("contextMenu.syncWithMainTimeline", "与主歌词时间轴相同")}
+				</ContextMenu.CheckboxItem>
+			</>
+		);
 	}
 
 	return (

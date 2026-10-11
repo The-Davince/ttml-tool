@@ -1,4 +1,5 @@
 import { getErrorMessage } from "../utils";
+import { acquireOpfsAccessHandle } from "./opfs-lock";
 import type { FFmpegAudioModule } from "./types";
 import initBpmWasm, {
 	type BpmAnalysisResult,
@@ -325,44 +326,25 @@ self.onmessage = async (e: MessageEvent) => {
 				create: true,
 			});
 
-			const acquireLockAndInit = async () => {
-				opfsAccessHandle = await fileHandle.createSyncAccessHandle();
-				opfsAccessHandle.truncate(0);
-				pcmWriteOffset = 0;
+			opfsAccessHandle = await acquireOpfsAccessHandle(fileHandle, opfsChannel);
+			opfsAccessHandle.truncate(0);
+			pcmWriteOffset = 0;
 
-				ffmpegModule = await initWasm(ffmpegWasmUrl);
-				decoderPtr = ffmpegModule._wasm_decoder_create(
-					1,
-					TARGET_SAMPLE_RATE,
-					1,
-				);
+			ffmpegModule = await initWasm(ffmpegWasmUrl);
+			decoderPtr = ffmpegModule._wasm_decoder_create(
+				1,
+				TARGET_SAMPLE_RATE,
+				1,
+			);
 
-				if (decoderPtr === 0) throw new Error("Failed to create Wasm Decoder");
-				ffmpegModule._wasm_decoder_set_compute_peaks(decoderPtr, 1);
-				totalDuration = ffmpegModule._wasm_decoder_get_duration(decoderPtr);
+			if (decoderPtr === 0) throw new Error("Failed to create Wasm Decoder");
+			ffmpegModule._wasm_decoder_set_compute_peaks(decoderPtr, 1);
+			totalDuration = ffmpegModule._wasm_decoder_get_duration(decoderPtr);
 
-				totalSamples = 0;
-				isAnalyzing = true;
+			totalSamples = 0;
+			isAnalyzing = true;
 
-				analyzeLoop();
-			};
-
-			try {
-				await acquireLockAndInit();
-			} catch (e) {
-				if ((e as Error).name === "NoModificationAllowedError") {
-					opfsChannel.onmessage = async (e) => {
-						if (e.data === "OPFS_RELEASED") {
-							opfsChannel.onmessage = null;
-							await acquireLockAndInit();
-						}
-					};
-
-					opfsChannel.postMessage("DEMAND_LOCK");
-				} else {
-					throw e;
-				}
-			}
+			analyzeLoop();
 		} catch (err) {
 			console.error("[Analyzer] Init Failed:", err);
 

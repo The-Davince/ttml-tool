@@ -29,7 +29,6 @@ export const OutlinePanel = memo(() => {
 	const setJumpAction = useSetAtom(outlineJumpActionAtom);
 
 	const containerRef = useRef<HTMLDivElement>(null);
-	const previousSelectionRef = useRef<Set<string> | null>(null);
 
 	const { onPointerDown } = useLyricListDrag({
 		containerRef,
@@ -56,22 +55,11 @@ export const OutlinePanel = memo(() => {
 
 	const handleContextMenuOpen = useCallback(
 		(opened: boolean, lineId: string) => {
-			if (!opened) {
-				if (toolMode !== ToolMode.Edit && previousSelectionRef.current) {
-					store.set(selectedLinesAtom, previousSelectionRef.current);
-					previousSelectionRef.current = null;
-				}
-				return;
-			}
-			if (isDragging) return;
-			if (toolMode === ToolMode.Edit) {
+			if (opened && toolMode === ToolMode.Edit && !isDragging) {
 				const currentSelected = store.get(selectedLinesAtom);
 				if (!currentSelected.has(lineId)) {
 					store.set(selectedLinesAtom, new Set([lineId]));
 				}
-			} else {
-				previousSelectionRef.current = store.get(selectedLinesAtom);
-				store.set(selectedLinesAtom, new Set([lineId]));
 			}
 		},
 		[store, isDragging, toolMode],
@@ -140,7 +128,7 @@ export const OutlinePanel = memo(() => {
 							</ContextMenu.Trigger>
 
 							<ContextMenu.Content>
-								<LyricLineMenu lineIndex={index} />
+								<LyricLineMenu lineIndex={index} syncMode={toolMode === ToolMode.Sync} />
 							</ContextMenu.Content>
 						</ContextMenu.Root>
 					</div>
