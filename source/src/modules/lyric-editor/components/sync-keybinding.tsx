@@ -3,6 +3,7 @@ import { useStore } from "jotai";
 import { type FC, useCallback } from "react";
 import { audioEngine } from "$/modules/audio/audio-engine";
 import type { LyricLine, LyricWord, LyricWordBase } from "$/types/ttml";
+import { reconcileFollowMainTimeline } from "$/modules/lyric-editor/utils/follow-main-timeline";
 import {
 	findNextWord,
 	getCurrentLineLocation,
@@ -305,6 +306,7 @@ export const SyncKeyBinding: FC = () => {
 						location.rubyIndex,
 						currentTime,
 					);
+					reconcileFollowMainTimeline(state);
 				}),
 			);
 		},
@@ -332,6 +334,7 @@ export const SyncKeyBinding: FC = () => {
 								location.rubyIndex,
 								currentTime,
 							);
+							reconcileFollowMainTimeline(state);
 						}),
 					);
 					store.set(smartFirstWordActiveIdAtom, location.word.id);
@@ -362,6 +365,7 @@ export const SyncKeyBinding: FC = () => {
 							currentTime,
 						);
 						line.endTime = currentTime;
+						reconcileFollowMainTimeline(state);
 					}),
 				);
 				moveToNextWord();
@@ -394,6 +398,7 @@ export const SyncKeyBinding: FC = () => {
 							currentTime,
 						);
 					}
+					reconcileFollowMainTimeline(state);
 				}),
 			);
 			moveToNextWord();
@@ -426,6 +431,7 @@ export const SyncKeyBinding: FC = () => {
 					if (location.isLastWord) {
 						line.endTime = currentTime;
 					}
+					reconcileFollowMainTimeline(state);
 				}),
 			);
 			moveToNextWord();

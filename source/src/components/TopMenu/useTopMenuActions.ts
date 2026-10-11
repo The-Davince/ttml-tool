@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import saveFile from "save-file";
 import { uid } from "uid";
 import { useFileOpener } from "$/hooks/useFileOpener.ts";
+import { reconcileFollowMainTimeline } from "$/modules/lyric-editor/utils/follow-main-timeline";
 import { applyGeneratedRuby } from "$/modules/lyric-editor/utils/ruby-generator";
 import {
 	segmentLyricLines,
@@ -388,6 +389,7 @@ export const useTopMenuActions = () => {
 					line.startTime = startTime;
 					line.endTime = endTime;
 				}
+				reconcileFollowMainTimeline(draft);
 			});
 		};
 

@@ -11,6 +11,7 @@
 
 import {
 	AddFilled,
+	ClockRegular,
 	LinkMultiple20Regular,
 	TextAlignRightFilled,
 	VideoBackgroundEffectFilled,
@@ -350,6 +351,7 @@ export const LyricLineView: FC<{
 	);
 	const originalEndTimeRef = useRef<number | null>(null);
 	const originalNextStartTimeRef = useRef<number | null>(null);
+	const previousSelectionRef = useRef<Set<string> | null>(null);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: 用于呈现时间戳更新效果
 	useEffect(() => {
@@ -524,13 +526,30 @@ export const LyricLineView: FC<{
 			<ContextMenu.Root
 				onOpenChange={(opened) => {
 					if (opened) {
-						if (!store.get(selectedLinesAtom).has(line.id)) {
+						if (toolMode === ToolMode.Edit) {
+							if (!store.get(selectedLinesAtom).has(line.id)) {
+								store.set(selectedLinesAtom, new Set([line.id]));
+							}
+						} else {
+							previousSelectionRef.current = store.get(
+								selectedLinesAtom,
+							);
 							store.set(selectedLinesAtom, new Set([line.id]));
 						}
+					} else if (
+						toolMode !== ToolMode.Edit &&
+						previousSelectionRef.current
+					) {
+						store.set(selectedLinesAtom, previousSelectionRef.current);
+						previousSelectionRef.current = null;
 					}
 				}}
 			>
-				<ContextMenu.Trigger disabled={toolMode !== ToolMode.Edit}>
+				<ContextMenu.Trigger
+					disabled={
+						toolMode !== ToolMode.Edit && toolMode !== ToolMode.Sync
+					}
+				>
 					<Flex
 						mx="2"
 						my="1"
@@ -567,6 +586,7 @@ export const LyricLineView: FC<{
 								</Text>
 								{line.isBG && <VideoBackgroundEffectFilled color="#4466FF" />}
 								{line.isDuet && <TextAlignRightFilled color="#44AA33" />}
+								{line.followMainTimeline && <ClockRegular color="#AA44DD" />}
 							</Flex>
 							<div
 								className={classNames(

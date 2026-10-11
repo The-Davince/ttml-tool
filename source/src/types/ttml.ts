@@ -79,6 +79,11 @@ export interface LyricLine extends AMLLLyricLine {
 		 */
 		originalNextStartTime: number | null;
 	};
+	/**
+	 * @description 是否启用了“与主歌词时间轴相同”（仅对背景 / 对唱歌词行有效），
+	 * 启用后该行的时间轴会跟随其对应主歌词行，导出时不会保存
+	 */
+	followMainTimeline?: boolean;
 }
 
 export const newLyricLine = (): LyricLine => ({

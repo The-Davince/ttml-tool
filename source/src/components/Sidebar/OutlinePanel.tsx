@@ -29,6 +29,7 @@ export const OutlinePanel = memo(() => {
 	const setJumpAction = useSetAtom(outlineJumpActionAtom);
 
 	const containerRef = useRef<HTMLDivElement>(null);
+	const previousSelectionRef = useRef<Set<string> | null>(null);
 
 	const { onPointerDown } = useLyricListDrag({
 		containerRef,
@@ -55,14 +56,25 @@ export const OutlinePanel = memo(() => {
 
 	const handleContextMenuOpen = useCallback(
 		(opened: boolean, lineId: string) => {
-			if (opened && !isDragging) {
+			if (!opened) {
+				if (toolMode !== ToolMode.Edit && previousSelectionRef.current) {
+					store.set(selectedLinesAtom, previousSelectionRef.current);
+					previousSelectionRef.current = null;
+				}
+				return;
+			}
+			if (isDragging) return;
+			if (toolMode === ToolMode.Edit) {
 				const currentSelected = store.get(selectedLinesAtom);
 				if (!currentSelected.has(lineId)) {
 					store.set(selectedLinesAtom, new Set([lineId]));
 				}
+			} else {
+				previousSelectionRef.current = store.get(selectedLinesAtom);
+				store.set(selectedLinesAtom, new Set([lineId]));
 			}
 		},
-		[store, isDragging],
+		[store, isDragging, toolMode],
 	);
 
 	return (
@@ -89,7 +101,11 @@ export const OutlinePanel = memo(() => {
 						<ContextMenu.Root
 							onOpenChange={(opened) => handleContextMenuOpen(opened, line.id)}
 						>
-							<ContextMenu.Trigger disabled={toolMode !== ToolMode.Edit}>
+							<ContextMenu.Trigger
+								disabled={
+									toolMode !== ToolMode.Edit && toolMode !== ToolMode.Sync
+								}
+							>
 								<div
 									className={styles.outlineItem}
 									data-selected={isSelected}
