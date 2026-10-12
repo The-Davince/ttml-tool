@@ -18,9 +18,7 @@ export interface ToolTabDef {
 }
 
 /**
- * 工具窗口标签页注册表
- *
- * 新增标签页类型只需在此追加一项，"+" 菜单会自动列出
+ * 工具窗标签页注册表
  */
 export const TOOL_TAB_DEFS: ToolTabDef[] = [
 	{

@@ -12,13 +12,6 @@ import { getAgentTool, getToolSchemas } from "$/modules/ai/tools";
 import { lyricLinesAtom } from "$/states/main.ts";
 import { globalStore } from "$/states/store.ts";
 
-/**
- * Agent 循环
- *
- * 用户输入 → LLM 思考 → 工具调用 → 结果回传 → 继续思考 → … → 最终回答
- * 每一步实时写入 aiTurnsAtom，UI 同步展示执行进度。
- */
-
 const MAX_TOOL_ROUNDS = 12;
 
 interface LLMMessage {
@@ -32,7 +25,6 @@ interface LLMMessage {
         tool_call_id?: string;
 }
 
-/** LLM 会话记忆（含工具交互），清空聊天时重置 */
 let llmMessages: LLMMessage[] = [];
 
 export const resetAgentMemory = () => {
@@ -76,15 +68,9 @@ const buildSystemPrompt = (): string => {
 10. 完成修改后，简要总结做了什么。使用简体中文回复，简洁友好；较长的回答可用 Markdown（加粗、列表、小标题）组织，界面已支持渲染。`;
 };
 
-/**
- * 通道探测缓存：
- *   null = 尚未探测；true = 该 baseURL 可浏览器直连；false = 直连被 CORS/网络拦截，走后端代理。
- * 一旦确认，同一次会话内后续请求沿用，避免每轮都先撞一次失败的直连。
- */
 let directChannelOk: boolean | null = null;
 let probedBaseURL = "";
 
-/** baseURL 变化时重置探测（在 runAgentTurn 开头调用） */
 export const resetAIChannelProbe = (baseURL: string) => {
         if (probedBaseURL !== baseURL) {
                 directChannelOk = null;
@@ -92,13 +78,11 @@ export const resetAIChannelProbe = (baseURL: string) => {
         }
 };
 
-/** 由 baseURL 推导 chat/completions 端点（与 server.py 逻辑保持一致） */
 const buildChatEndpoint = (baseURL: string): string => {
         const b = baseURL.trim().replace(/\/+$/, "");
         return b.endsWith("/chat/completions") ? b : `${b}/chat/completions`;
 };
 
-/** 解析 OpenAI 兼容响应，取出 choices[0].message */
 const pickMessage = (data: unknown): LLMMessage => {
         const choices = (data as { choices?: Array<{ message?: LLMMessage }> })
                 .choices;
@@ -107,7 +91,6 @@ const pickMessage = (data: unknown): LLMMessage => {
         return message;
 };
 
-/** 从非 2xx 响应体里尽量提取可读错误（兼容 error / error.message / message 等形态） */
 const extractErrText = (data: unknown, status: number): string => {
         const d = data as {
                 error?: unknown;
@@ -131,8 +114,6 @@ const chatCompletion = async (
 ): Promise<{ message: LLMMessage }> => {
         const tools = getToolSchemas();
         resetAIChannelProbe(settings.baseURL);
-
-        /** 通道一：浏览器直连 OpenAI 兼容端点 */
         const tryDirect = async (): Promise<{ message: LLMMessage }> => {
                 const resp = await fetch(buildChatEndpoint(settings.baseURL), {
                         method: "POST",
@@ -153,7 +134,6 @@ const chatCompletion = async (
                         }),
                         signal,
                 });
-                // fetch 未抛错 = 传输层与 CORS 均正常，缓存“可直连”
                 directChannelOk = true;
                 let data: unknown;
                 try {
@@ -167,7 +147,6 @@ const chatCompletion = async (
                 return { message: pickMessage(data) };
         };
 
-        /** 通道二：本地后端代理 server.py /api/ai/chat（带瞬态重试，更鲁棒） */
         const tryProxy = async (): Promise<{ message: LLMMessage }> => {
                 const resp = await fetch(apiUrl("/api/ai/chat"), {
                         method: "POST",
@@ -194,7 +173,6 @@ const chatCompletion = async (
                 return { message: pickMessage(data) };
         };
 
-        // 强制仅走代理 / 已确认需要走代理 / 尚未配置可直连的 baseURL → 直接代理
         if (
                 settings.useProxyOnly ||
                 directChannelOk === false ||
@@ -206,20 +184,11 @@ const chatCompletion = async (
         try {
                 return await tryDirect();
         } catch (e) {
-                // 用户主动停止：原样抛出，交由上层处理中断
                 if (signal.aborted) throw e;
-                // CORS / 网络不可达（浏览器抛 TypeError）→ 永久标记需走代理
                 if (e instanceof TypeError) directChannelOk = false;
-                // 其余任何直连失败（含上游 HTTP 5xx、非 JSON 等瞬态问题）
-                // 都回落到带重试的后端代理，而不是直接把错误抛给用户。
                 return tryProxy();
         }
 };
-
-/* -------------------------------------------------------------------------
- * 流式（SSE）支持：逐字拿到模型输出，让“思考”过程实时显示。
- * 直连与代理两条通道均产出标准 OpenAI SSE 分片，用同一套解析器处理。
- * ------------------------------------------------------------------------- */
 
 interface StreamDeltaToolCall {
 	index?: number;
@@ -248,7 +217,6 @@ interface StreamAcc {
 
 const newAcc = (): StreamAcc => ({ content: "", toolByIndex: new Map() });
 
-/** 把一个 SSE 分片(或整段 message)累加进 acc; 内容增量时回调当前完整文本 */
 const applyChunkToAcc = (
 	chunk: StreamChunk,
 	acc: StreamAcc,
@@ -256,7 +224,6 @@ const applyChunkToAcc = (
 ): void => {
 	const choice = chunk?.choices?.[0];
 	if (!choice) return;
-	// 兼容流式 delta 与非流式 message 两种形态
 	const d = choice.delta ?? choice.message;
 	if (!d) return;
 	if (typeof d.content === "string" && d.content) {
@@ -292,7 +259,6 @@ const finalizeAcc = (acc: StreamAcc): LLMMessage => {
 	return message;
 };
 
-/** 读取 Response 的 SSE 字节流, 按行解析 data: 分片 */
 const consumeSSE = async (
 	resp: Response,
 	acc: StreamAcc,
@@ -354,7 +320,6 @@ const consumeSSE = async (
 	}
 };
 
-/** 发起一次流式请求并把分片累加进 acc */
 const runStreamFetch = async (
 	url: string,
 	init: RequestInit,
@@ -377,7 +342,6 @@ const runStreamFetch = async (
 		await consumeSSE(resp, acc, onContentDelta, signal);
 		return;
 	}
-	// 非 SSE(端点忽略 stream): 当作整段 JSON message 处理
 	const text = await resp.text();
 	try {
 		applyChunkToAcc(JSON.parse(text) as StreamChunk, acc, onContentDelta);
@@ -386,11 +350,6 @@ const runStreamFetch = async (
 	}
 };
 
-/**
- * 流式 chat completion。与 chatCompletion 相同的直连/代理选择与探测缓存；
- * onContentDelta 会携带“当前累计完整文本”用于实时渲染。任一流式环节失败
- * 逐级回落：直连流式→代理流式→非流式 chatCompletion，保证不因流式不支持而中断。
- */
 const chatCompletionStream = async (
 	settings: AISettings,
 	messages: LLMMessage[],
@@ -448,7 +407,6 @@ const chatCompletionStream = async (
 		);
 	};
 
-	// 强制仅代理 / 已确认需代理 / 未配置可直连 baseURL → 直接代理流式
 	if (
 		settings.useProxyOnly ||
 		directChannelOk === false ||
@@ -472,7 +430,6 @@ const chatCompletionStream = async (
 	} catch (e) {
 		if (signal.aborted) throw e;
 		if (e instanceof TypeError) directChannelOk = false;
-		// 直连流式失败 → 代理流式; 再失败 → 非流式兜底
 		const acc2 = newAcc();
 		try {
 			await tryProxyStream(acc2);
@@ -485,7 +442,6 @@ const chatCompletionStream = async (
 	}
 };
 
-/** 更新当前轮次（不可变更新，保持 atom 引用变化） */
 const updateTurn = (turnId: string, updater: (turn: AITurn) => AITurn) => {
         globalStore.set(aiTurnsAtom, (turns) =>
                 turns.map((t) => (t.id === turnId ? updater(t) : t)),
@@ -525,14 +481,6 @@ const TOOL_LABELS: Record<string, string> = {
 
 export const getToolLabel = (name: string) => TOOL_LABELS[name] ?? name;
 
-/**
- * 兜底解析：把「写进 content 文本里的工具调用」还原成标准结构。
- *
- * 部分端点在 tool_choice=auto 下不会走原生 function calling，而是把
- * {"tool_calls":[{"name":"...","arguments":{}}]} 当作普通文字塞进 content，
- * 导致前端读不到 message.tool_calls、把这段 JSON 直接显示给用户。
- * 这里同时兼容 OpenAI 标准形态与扁平 {name, arguments} 形态。
- */
 const parseTextToolCalls = (
         raw: string,
 ): NonNullable<LLMMessage["tool_calls"]> => {
@@ -591,7 +539,6 @@ const parseTextToolCalls = (
         return [];
 };
 
-/** 优先用标准 message.tool_calls，为空时回退解析 content 文本 */
 const extractToolCalls = (
         message: LLMMessage,
 ): NonNullable<LLMMessage["tool_calls"]> => {
@@ -599,7 +546,6 @@ const extractToolCalls = (
         return parseTextToolCalls(message.content ?? "");
 };
 
-/** 执行一轮 Agent 对话，返回是否成功结束 */
 export async function runAgentTurn(
         settings: AISettings,
         userText: string,
@@ -617,7 +563,6 @@ export async function runAgentTurn(
         const controller = abortController;
 
         llmMessages.push({ role: "user", content: userText });
-        // 控制上下文长度：只保留最近 40 条
         if (llmMessages.length > 40) {
                 llmMessages = llmMessages.slice(-40);
         }
@@ -650,7 +595,6 @@ export async function runAgentTurn(
                                 controller.signal,
                                 (full) => {
                                         streamedContent = full;
-                                        // 本轮文本实时呈现为答案(若本轮其实是工具调用, 稍后回滚)
                                         updateTurn(turn.id, (t) => ({
                                                 ...t,
                                                 answer: full,
@@ -665,13 +609,11 @@ export async function runAgentTurn(
 
                         const toolCalls = extractToolCalls(message);
                         if (toolCalls.length > 0) {
-                                // 本轮为工具调用: 回滚本轮临时流式文本, 恢复上一轮已提交答案
                                 updateTurn(turn.id, (t) => ({
                                         ...t,
                                         answer: prevAnswer,
                                         streaming: false,
                                 }));
-                                // 兜底解析出的文本调用不保留进正文，避免污染会话历史
                                 const assistantText = message.tool_calls?.length
                                         ? (message.content ?? "")
                                         : "";
@@ -730,8 +672,6 @@ export async function runAgentTurn(
                                 }
                                 continue;
                         }
-
-                        // 最终回答(流式已逐字呈现, 此处以完整文本为准收尾)
                         const answer = (message.content ?? streamedContent ?? "").trim();
                         llmMessages.push({ role: "assistant", content: answer });
                         finish({ status: "done", answer });
@@ -750,7 +690,6 @@ export async function runAgentTurn(
                                 status: "error",
                         });
                         finish({ status: "aborted" });
-                        // 移除最后一条未完成的 user 消息避免污染记忆
                         if (llmMessages[llmMessages.length - 1]?.role === "user")
                                 llmMessages.pop();
                         return;
@@ -767,7 +706,6 @@ export async function runAgentTurn(
         }
 }
 
-/** 测试 AI 连通性（设置面板用） */
 export async function testAIConnection(
         settings: AISettings,
 ): Promise<{ ok: boolean; message: string }> {

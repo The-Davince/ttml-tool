@@ -20,9 +20,7 @@ import { outlineJumpActionAtom } from "$/states/sidebar";
 import styles from "./index.module.css";
 
 /**
- * 跳转到某个倒流音节：若当前处于预览模式先切回编辑，随后选中该行/词并触发滚动定位。
- *
- * 与侧边栏“消息”面板的跳转行为保持一致。
+ * 跳转到某个倒流音节
  */
 export function useJumpToUnit() {
 	const lyricLines = useAtomValue(lyricLinesAtom).lyricLines;
@@ -39,7 +37,6 @@ export function useJumpToUnit() {
 			if (!line) return;
 			setToolMode((prev) => (prev === ToolMode.Preview ? ToolMode.Edit : prev));
 			setSelectedLines(new Set([line.id]));
-			// 假名同时选中其所属单词，保证编辑模式下单词卡片也有选中反馈
 			const wordIds = new Set([unitId]);
 			const word = line.words[loc.wordIndex];
 			if (word && loc.rubyIndex !== undefined) wordIds.add(word.id);
@@ -64,10 +61,7 @@ interface GuardRow {
 }
 
 /**
- * 音节倒流守卫面板
- *
- * 当歌词存在时间倒流时替换 AMLL 预览渲染：列出所有倒流音节，点击可跳转定位，
- * 全部修复后面板自动消失、恢复预览。样式沿用 Radix 主题令牌以保持一致性。
+ * 存在倒流时替换预览渲染 修复后恢复
  */
 export const BackflowGuard = memo(() => {
 	const { t } = useTranslation();

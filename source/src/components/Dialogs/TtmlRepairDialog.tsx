@@ -20,10 +20,7 @@ import {
 import styles from "./TtmlRepairDialog.module.css";
 
 /**
- * TTML 格式异常修复对话框
- *
- * 导入 TTML 解析失败时弹出，询问用户是否尝试自动修复。
- * 修复成功后重新走导入流程；仍失败则回退到详细错误对话框。
+ * 导入错误处理
  */
 export const TtmlRepairDialog = () => {
 	const [dialogState, setDialogState] = useAtom(ttmlRepairDialogAtom);

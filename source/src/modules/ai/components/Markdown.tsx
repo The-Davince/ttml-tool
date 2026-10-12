@@ -1,18 +1,8 @@
 import { Fragment, createElement, type ReactNode } from "react";
 import styles from "./Markdown.module.css";
 
-/**
- * 轻量 Markdown 渲染（零依赖）。
- * 支持：# 标题、**粗体**、*斜体*、`行内代码`、[链接](url)、
- * - / * / + 无序列表、1. 有序列表、> 引用、--- 分隔线、普通段落与软换行。
- * AI 回答内容来自本地模型，非用户不可信输入，故不做严格 XSS 过滤，
- * 仅纯文本安全渲染（绝不使用 dangerouslySetInnerHTML）。
- */
-
-/** 渲染行内语法，返回 React 节点数组 */
 const renderInline = (text: string, keyBase: string): ReactNode[] => {
 	const nodes: ReactNode[] = [];
-	// 顺序很重要：先匹配反引号代码，再粗体，再斜体，最后链接
 	const re =
 		/(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\n]+\*)|(_[^_\n]+_)|(\[[^\]]+\]\([^)\s]+\))/g;
 	let last = 0;
@@ -130,7 +120,6 @@ export const Markdown = ({ text }: { text: string }) => {
 			) {
 				items.push(lines[idx].replace(/^\s*(?:[-*+]|\d+[.)])\s+/, ""));
 				idx++;
-				// 允许列表项内的续行（缩进且非新列表项）
 				while (
 					idx < lines.length &&
 					lines[idx].trim() &&
@@ -158,8 +147,6 @@ export const Markdown = ({ text }: { text: string }) => {
 			);
 			continue;
 		}
-
-		// 普通段落：收集连续的非特殊行，行内以 <br> 保留软换行
 		const para: string[] = [];
 		while (
 			idx < lines.length &&

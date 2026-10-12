@@ -41,7 +41,6 @@ import {
 import Markdown from "./Markdown";
 import styles from "./AIAssistantPanel.module.css";
 
-/** 步骤行左侧的状态图标 */
 const StepIcon = ({ step }: { step: AIStep }) => {
 	if (step.status === "running") {
 		if (step.kind === "thinking")
@@ -67,7 +66,6 @@ const StepIcon = ({ step }: { step: AIStep }) => {
 	return <Checkmark16Filled />;
 };
 
-/** 单个执行步骤行（紧凑） */
 const StepRow = ({ step }: { step: AIStep }) => {
 	const { t } = useTranslation();
 	const [showArgs, setShowArgs] = useState(false);
@@ -118,7 +116,6 @@ const StepRow = ({ step }: { step: AIStep }) => {
 	);
 };
 
-/** 执行步骤卡片：运行中展开，结束后折叠为摘要 */
 const StepsCard = ({ turn }: { turn: AITurn }) => {
 	const { t } = useTranslation();
 	const running = turn.status === "running";
@@ -165,7 +162,6 @@ const StepsCard = ({ turn }: { turn: AITurn }) => {
 	);
 };
 
-/** 一轮对话：用户输入 + 执行步骤 + 最终回答 */
 const TurnView = ({ turn }: { turn: AITurn }) => {
 	const { t } = useTranslation();
 	return (
@@ -236,7 +232,6 @@ const QUICK_ACTIONS = [
 	},
 ];
 
-/** 设置视图 */
 const SettingsView = ({ onBack }: { onBack: () => void }) => {
 	const { t } = useTranslation();
 	const [settings, setSettings] = useAtom(aiSettingsAtom);
@@ -260,7 +255,6 @@ const SettingsView = ({ onBack }: { onBack: () => void }) => {
 		setModel(preset.model);
 	};
 
-	// 外部（如保存后返回）更新设置时同步本地编辑态
 	useEffect(() => {
 		setBaseURL(settings.baseURL);
 		setModel(settings.model);
@@ -448,7 +442,7 @@ const SettingsView = ({ onBack }: { onBack: () => void }) => {
 	);
 };
 
-/** AI 助手标签页主组件 */
+/** AI助手标签页 */
 export const AIAssistantPanel = () => {
 	const { t } = useTranslation();
 	const settings = useAtomValue(aiSettingsAtom);
@@ -460,7 +454,6 @@ export const AIAssistantPanel = () => {
 	const chatRef = useRef<HTMLDivElement>(null);
 	const configured = isAIConfigured(settings);
 
-	// 新消息自动滚动到底部（用户上滚时暂停自动滚动）
 	const stickToBottomRef = useRef(true);
 	const onChatScroll = useCallback(() => {
 		const el = chatRef.current;
@@ -468,7 +461,6 @@ export const AIAssistantPanel = () => {
 		stickToBottomRef.current =
 			el.scrollHeight - el.scrollTop - el.clientHeight < 60;
 	}, []);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: 仅在 turns 变化时需要滚动到底部
 	useEffect(() => {
 		const el = chatRef.current;
 		if (el && stickToBottomRef.current) {
@@ -476,7 +468,6 @@ export const AIAssistantPanel = () => {
 		}
 	}, [turns]);
 
-	// 未配置时自动进入设置视图
 	useEffect(() => {
 		if (!configured) setSettingsView(true);
 	}, [configured, setSettingsView]);

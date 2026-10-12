@@ -45,11 +45,7 @@ const clampWidth = (width: number) => {
 };
 
 /**
- * 右侧工具窗口
- *
- * 浏览器式标签页布局：顶部标签栏（标签 + "+" 新建菜单 + 窗口关闭），
- * 内容区按标签页类型渲染（见 tabs.tsx 注册表）。
- * 左边缘可拖动调整宽度，宽度持久化保存。
+ * 工具窗口
  */
 export const ToolWindow = memo(() => {
 	const { t } = useTranslation();

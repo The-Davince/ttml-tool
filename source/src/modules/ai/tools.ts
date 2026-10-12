@@ -14,18 +14,6 @@ import {
         type TTMLMetadata,
 } from "$/types/ttml";
 
-/**
- * AI 工具注册表（类 MCP）
- *
- * 每个工具声明 JSON Schema 参数与执行器；Agent 将这些定义
- * 发送给大模型，模型通过 function calling 调用，
- * 执行结果回传给模型继续决策。
- *
- * 所有修改歌词的工具：
- * - 通过 globalStore 直接写入 lyricLinesAtom（自动获得 Ctrl+Z 撤销支持）
- * - 修改后调用 recordAIHistory 记录历史（AI 来源，精确描述）
- */
-
 export interface AgentToolResult {
         success: boolean;
         message: string;
@@ -61,15 +49,10 @@ const fail = (message: string): AgentToolResult => ({
 const asNumberArray = (v: unknown): number[] =>
         Array.isArray(v) ? v.map(Number).filter((n) => Number.isInteger(n)) : [];
 
-/** 行号校验，返回有效索引或 null */
 const validLineIndex = (i: number, lines: LyricLine[]) =>
         Number.isInteger(i) && i >= 0 && i < lines.length;
 
 const formatSeconds = (ms: number) => `${(ms / 1000).toFixed(2)}s`;
-
-// ---------------------------------------------------------------------------
-// 工具实现
-// ---------------------------------------------------------------------------
 
 const getLyricsInfo: AgentTool = {
         name: "get_lyrics_info",
@@ -315,14 +298,10 @@ const importQQLyric: AgentTool = {
 
                 const lyric = getLyric();
 
-                // 新版服务端附带 Ruby TTML → 高保真导入
-                // (逐假名时间轴注音 + 逐词音译 + 翻译, 制作名单已在服务端过滤)
                 if (lyricData.ttml) {
                         const result = ttmlToAmll(lyricData.ttml);
                         if (result.success) {
                                 const amll = result.data;
-                                // 元数据合并: QQ 返回的键 (musicName/artists/album/qqMusicId/
-                                // songwriter) 覆盖同名项, 原文档独有的键 (如 isrc) 保留
                                 const qqKeys = new Set(amll.metadata.map((m) => m.key));
                                 let metadata: TTMLMetadata[] = amll.metadata.map((m) => ({
                                         key: m.key,
@@ -405,8 +384,6 @@ const importQQLyric: AgentTool = {
                         return line;
                 });
 
-                // 元数据：搜索结果优先，回退 QRC 头；键名与工具内建约定一致
-                // (musicName/artists/album/qqMusicId)
                 const cleanMeta = (v?: string) => {
                         const s = (v ?? "").replace(/\s+/g, " ").trim();
                         const m = s.match(/^(.+?)\s*[（(][^()（）]*[)）]\s*$/);
@@ -963,7 +940,6 @@ const setMetadata: AgentTool = {
                 const key = String(args.key ?? "").trim();
                 const value = String(args.value ?? "");
                 if (!key) return fail("缺少 key");
-                // artists/songwriter 的多值约定：多次添加该键值，/ 或 、分隔自动拆分
                 const values =
                         key === "artists" || key === "songwriter"
                                 ? value
@@ -988,7 +964,6 @@ const setMetadata: AgentTool = {
         },
 };
 
-/** 全部工具（导出给 Agent 使用） */
 export const AGENT_TOOLS: AgentTool[] = [
         getLyricsInfo,
         searchWeb,
@@ -1011,7 +986,6 @@ export const AGENT_TOOLS: AgentTool[] = [
 export const getAgentTool = (name: string) =>
         AGENT_TOOLS.find((tool) => tool.name === name);
 
-/** OpenAI function calling 格式的工具定义 */
 export const getToolSchemas = () =>
         AGENT_TOOLS.map((tool) => ({
                 type: "function",
