@@ -150,6 +150,23 @@ const AppErrorPage = ({
 	);
 };
 
+function FollowMainTimelineReconciler() {
+	const lyricLines = useAtomValue(lyricLinesAtom);
+	const setLyricLines = useSetAtom(lyricLinesAtom);
+	useEffect(() => {
+		if (!lyricLines.lyricLines.some((line) => line.followMainTimeline)) {
+			return;
+		}
+		const next = produce(lyricLines, (draft) => {
+			reconcileFollowMainTimeline(draft);
+		});
+		if (next !== lyricLines) {
+			setLyricLines(next);
+		}
+	}, [lyricLines, setLyricLines]);
+	return null;
+}
+
 function App() {
 	const isDarkTheme = useAtomValue(isDarkThemeAtom);
 	const toolMode = useAtomValue(toolModeAtom);
@@ -181,21 +198,6 @@ function App() {
 	useEffect(() => {
 		initHistoryTracking();
 	}, []);
-
-	useEffect(() => {
-		return store.subscribe(lyricLinesAtom, () => {
-			const current = store.get(lyricLinesAtom);
-			if (!current.lyricLines.some((line) => line.followMainTimeline)) {
-				return;
-			}
-			const next = produce(current, (draft) => {
-				reconcileFollowMainTimeline(draft);
-			});
-			if (next !== current) {
-				store.set(lyricLinesAtom, next);
-			}
-		});
-	}, [store]);
 
 	useEffect(() => {
 		if (import.meta.env.TAURI_ENV_PLATFORM) {
@@ -367,6 +369,7 @@ function App() {
 				)}
 				<div className={styles.appContent}>
 					<AutosaveManager />
+					<FollowMainTimelineReconciler />
 					<GlobalDragOverlay />
 					<MessageCenter />
 					{toolMode === ToolMode.Sync && <SyncKeyBinding />}
