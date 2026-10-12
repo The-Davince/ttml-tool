@@ -242,13 +242,15 @@ export function findNextWord(
 	}
 	const nextLineIndex = lyricLines
 		.slice(lineIndex + 1)
-		.findIndex((nextLine, offset) => {
-			if (!isSynchronizableLine(nextLine) || getSynchronizableUnits(nextLine).length === 0) return false;
+		.findIndex((nextLine) => {
+			if (
+				!isSynchronizableLine(nextLine) ||
+				getSynchronizableUnits(nextLine).length === 0
+			) {
+				return false;
+			}
 			if (!skipFollowEnabledLines) return true;
-			return (
-				!nextLine.followMainTimeline ||
-				lineIndex + 1 + offset === lyricLines.length - 1
-			);
+			return !nextLine.followMainTimeline;
 		});
 	if (nextLineIndex === -1) return;
 	const absoluteIndex = lineIndex + 1 + nextLineIndex;

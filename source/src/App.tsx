@@ -26,6 +26,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { platform, version } from "@tauri-apps/plugin-os";
 import { AnimatePresence, motion } from "framer-motion";
+import { produce } from "immer";
 import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -66,6 +67,7 @@ import {
 	ttmlLyricToAmllResult,
 } from "./modules/ttml-processor/index.ts";
 import { useTtmlErrorHandler } from "./modules/ttml-processor/useTtmlErrorHandler.ts";
+import { reconcileFollowMainTimeline } from "./modules/lyric-editor/utils/follow-main-timeline.ts";
 import { settingsDialogAtom, settingsTabAtom } from "./states/dialogs.ts";
 import {
 	isDarkThemeAtom,
@@ -179,6 +181,21 @@ function App() {
 	useEffect(() => {
 		initHistoryTracking();
 	}, []);
+
+	useEffect(() => {
+		return store.subscribe(lyricLinesAtom, () => {
+			const current = store.get(lyricLinesAtom);
+			if (!current.lyricLines.some((line) => line.followMainTimeline)) {
+				return;
+			}
+			const next = produce(current, (draft) => {
+				reconcileFollowMainTimeline(draft);
+			});
+			if (next !== current) {
+				store.set(lyricLinesAtom, next);
+			}
+		});
+	}, [store]);
 
 	useEffect(() => {
 		if (import.meta.env.TAURI_ENV_PLATFORM) {

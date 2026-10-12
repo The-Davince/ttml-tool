@@ -590,7 +590,14 @@ export const LyricLineView: FC<{
 									)}
 									ref={wordsContainerRef}
 								>
-									{words.map((wordAtom, wi) => {
+									{toolMode === ToolMode.Sync && line.followMainTimeline ? (
+										<div className={styles.followLineCompact}>
+											{line.words.map((word) => word.word).join("") ||
+												"\u00A0"}
+										</div>
+									) : (
+										<>
+											{words.map((wordAtom, wi) => {
 										const word = store.get(wordAtom);
 										return (
 											<Fragment key={`word-${word.id}`}>
@@ -694,7 +701,9 @@ export const LyricLineView: FC<{
 												}
 											}}
 											onPointerDown={(e) => e.stopPropagation()}
-										/>
+											/>
+										)}
+										</>
 									)}
 								</div>
 								{toolMode === ToolMode.Edit && (
@@ -731,7 +740,9 @@ export const LyricLineView: FC<{
 									</IconButton>
 								</Flex>
 							)}
-							{toolMode === ToolMode.Sync && showTimestamps && (
+							{toolMode === ToolMode.Sync &&
+								showTimestamps &&
+								!line.followMainTimeline && (
 								<Flex pr="3" gap="1" direction="column" align="stretch">
 									<div className={styles.startTime} ref={startTimeRef}>
 										{msToTimestamp(line.startTime)}

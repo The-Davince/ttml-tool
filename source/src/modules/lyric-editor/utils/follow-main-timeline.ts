@@ -4,7 +4,7 @@ export function findMainLineIndex(
 	lines: LyricLine[],
 	index: number,
 ): number | null {
-	for (let i = index - 1; i >= 0; i--) {if (!lines[i].isBG && !lines[i].isDuet) return i;}
+	for (let i = index - 1; i >= 0; i--) {if (!lines[i].followMainTimeline) return i;}
 	return null;
 }
 
@@ -42,21 +42,8 @@ export function copyTimelineFromMain(target: LyricLine, main: LyricLine) {
 		});
 		return;
 	}
-	const firstStart = target.words[0].startTime;
-	const lastEnd = target.words[target.words.length - 1].endTime;
-	const oldSpan = lastEnd - firstStart;
-	const mainSpan = main.endTime - main.startTime;
-	if (oldSpan > 0) {
-		const scale = mainSpan / oldSpan;
-		for (const word of target.words) {
-			remapWordTimeline(
-				word,
-				main.startTime + (word.startTime - firstStart) * scale,
-				main.startTime + (word.endTime - firstStart) * scale,
-			);
-		}
-	} else {
-		const step = mainSpan / target.words.length;
+	if (main.words.length === 0) {
+		const step = (main.endTime - main.startTime) / target.words.length;
 		target.words.forEach((word, i) => {
 			remapWordTimeline(
 				word,
@@ -64,7 +51,33 @@ export function copyTimelineFromMain(target: LyricLine, main: LyricLine) {
 				main.startTime + (i + 1) * step,
 			);
 		});
+		return;
 	}
+	const anchors: number[] = [
+		...new Set(
+			main.words.flatMap((mainWord) => [
+				mainWord.startTime,
+				mainWord.endTime,
+			]),
+		),
+	];
+	anchors.sort((a, b) => a - b);
+	const anchorCount = anchors.length;
+	const interp = (t: number): number => {
+		if (t <= 0) return anchors[0];
+		if (t >= anchorCount - 1) return anchors[anchorCount - 1];
+		const i = Math.floor(t);
+		const frac = t - i;
+		return anchors[i] + (anchors[i + 1] - anchors[i]) * frac;
+	};
+	const span = anchorCount - 1;
+	target.words.forEach((word, i) => {
+		remapWordTimeline(
+			word,
+			interp((i / target.words.length) * span),
+			interp(((i + 1) / target.words.length) * span),
+		);
+	});
 }
 
 export function reconcileFollowMainTimeline(state: TTMLLyric) {
@@ -74,9 +87,19 @@ export function reconcileFollowMainTimeline(state: TTMLLyric) {
 		if (!line.followMainTimeline) continue;
 		if (!line.isBG && !line.isDuet) continue;
 		const mainIndex = findMainLineIndex(lines, i);
-		if (mainIndex === null) continue;
+		if (mainIndex === null) {
+			line.followMainTimeline = false;
+			continue;
+		}
 		const main = lines[mainIndex];
-		if (!main) continue;
+		if (!main) {
+			line.followMainTimeline = false;
+			continue;
+		}
+		if (line.words.length !== main.words.length) {
+			line.followMainTimeline = false;
+			continue;
+		}
 		copyTimelineFromMain(line, main);
 	}
 }
