@@ -231,7 +231,10 @@ export function findNextWord(
 	const line = lyricLines[lineIndex];
 	if (!line) return;
 	const units = getSynchronizableUnits(line);
-	const nextUnit = units[syncIndex + 1];
+	const nextUnit =
+		skipFollowEnabledLines && line.followMainTimeline
+			? undefined
+			: units[syncIndex + 1];
 	if (nextUnit) {
 		return {
 			line,

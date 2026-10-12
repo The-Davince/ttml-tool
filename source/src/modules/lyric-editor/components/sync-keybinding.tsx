@@ -149,7 +149,7 @@ export const SyncKeyBinding: FC = () => {
 	);
 
 	const moveToNextWordBase = useCallback(
-		(play: boolean, skipFollowEnabledLines = false): boolean => {
+		(play: boolean, skipFollowEnabledLines = true): boolean => {
 			const location = getCurrentLocation(store);
 			if (!location) return false;
 			const nextWord = findNextWord(
@@ -194,6 +194,7 @@ export const SyncKeyBinding: FC = () => {
 					.find(
 						(line) =>
 							isSynchronizableLine(line) &&
+							!line.followMainTimeline &&
 							getSynchronizableUnits(line).length > 0,
 					);
 				if (!lastLine) return false;
@@ -360,6 +361,7 @@ export const SyncKeyBinding: FC = () => {
 			// 智能尾字
 			const smartLastWord = store.get(smartLastWordAtom);
 			if (smartLastWord && location.isLastWord) {
+				moveToNextWordSkipFollow();
 				store.set(lyricLinesAtom, (state) =>
 					produce(state, (state) => {
 						const line = state.lyricLines[location.lineIndex];
@@ -373,10 +375,10 @@ export const SyncKeyBinding: FC = () => {
 						reconcileFollowMainTimeline(state);
 					}),
 				);
-				moveToNextWordSkipFollow();
 				return;
 			}
 
+			moveToNextWordSkipFollow();
 			store.set(lyricLinesAtom, (state) =>
 				produce(state, (state) => {
 					const curLine = state.lyricLines[location.lineIndex];
@@ -407,7 +409,6 @@ export const SyncKeyBinding: FC = () => {
 					reconcileFollowMainTimeline(state);
 				}),
 			);
-			moveToNextWordSkipFollow();
 
 			// 开了智能首字后，连轴打到下一行时跳过智能首字
 			if (smartFirstWord) {
