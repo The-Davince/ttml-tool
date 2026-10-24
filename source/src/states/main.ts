@@ -91,7 +91,26 @@ export const saveStatusAtom = atom<SaveStatus>(SaveStatus.Saved);
 export const lastSavedTimeAtom = atom<number | null>(null);
 
 export const undoableLyricLinesAtom = withHistory(lyricLinesAtom, 256);
-export const isDirtyAtom = atom((get) => get(undoableLyricLinesAtom).canUndo);
+
+/**
+ * @description 上次载入/新建/保存完成时的歌词基线快照, 初始为空文档的序列化结果
+ */
+const lyricSavedSnapshotAtom = atom<string | null>(
+	JSON.stringify({ lyricLines: [], metadata: [] }),
+);
+
+/**
+ * @description 在文件载入/新建/保存完成后调用, 记录当前内容为新的基线
+ */
+export const markLyricSavedAtom = atom(null, (get, set) => {
+	set(lyricSavedSnapshotAtom, JSON.stringify(get(lyricLinesAtom)));
+});
+
+export const isDirtyAtom = atom((get) => {
+	const snapshot = get(lyricSavedSnapshotAtom);
+	if (snapshot === null) return false;
+	return JSON.stringify(get(lyricLinesAtom)) !== snapshot;
+});
 export const undoLyricLinesAtom = atom(null, (_get, set) => {
 	set(undoableLyricLinesAtom, UNDO);
 });
@@ -118,6 +137,7 @@ export const newLyricLinesAtom = atom(
 		set(selectedWordsAtom, new Set());
 		// 新文档载入时清空消息中心的记录
 		set(lyricMessagesAtom, {});
+		set(lyricSavedSnapshotAtom, JSON.stringify(newState));
 	},
 );
 export const selectedLinesAtom = atom(new Set<string>());

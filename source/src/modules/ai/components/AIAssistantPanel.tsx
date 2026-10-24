@@ -38,6 +38,11 @@ import {
 	aiTurnsAtom,
 	isAIConfigured,
 } from "$/modules/ai/states";
+import {
+	type AIPermissionMode,
+	aiPermissionModeAtom,
+} from "$/modules/ai/permission";
+import { confirmDialogAtom } from "$/states/dialogs";
 import Markdown from "./Markdown";
 import styles from "./AIAssistantPanel.module.css";
 
@@ -453,6 +458,25 @@ export const AIAssistantPanel = () => {
 	const [input, setInput] = useState("");
 	const chatRef = useRef<HTMLDivElement>(null);
 	const configured = isAIConfigured(settings);
+	const [permissionMode, setPermissionMode] = useAtom(aiPermissionModeAtom);
+	const setConfirmDialog = useSetAtom(confirmDialogAtom);
+
+	const switchPermissionMode = (mode: AIPermissionMode) => {
+		if (mode === permissionMode) return;
+		if (mode === "full") {
+			setConfirmDialog({
+				open: true,
+				title: t("ai.permission.fullConfirmTitle", "确认开启「完全访问」模式？"),
+				description: t(
+					"ai.permission.fullConfirmDesc",
+					"完全访问模式下，AI 可以不经确认直接修改你的歌词文档（导入、删除、合并、改写等），可能造成内容丢失。请确认你了解并接受此风险。",
+				),
+				onConfirm: () => setPermissionMode("full"),
+			});
+		} else {
+			setPermissionMode("confirm");
+		}
+	};
 
 	const stickToBottomRef = useRef(true);
 	const onChatScroll = useCallback(() => {
@@ -587,6 +611,25 @@ export const AIAssistantPanel = () => {
 
 					<div className={styles.inputArea}>
 						<div className={styles.inputRow}>
+							<select
+								className={styles.permissionSelect}
+								data-mode={permissionMode}
+								title={t(
+									"ai.permission.hint",
+									"控制 AI 修改歌词文档时是否需要逐次确认",
+								)}
+								value={permissionMode}
+								onChange={(e) =>
+									switchPermissionMode(e.target.value as AIPermissionMode)
+								}
+							>
+								<option value="confirm">
+									{t("ai.permission.confirm", "变更确认")}
+								</option>
+								<option value="full">
+									{t("ai.permission.full", "完全访问")}
+								</option>
+							</select>
 							<textarea
 								className={styles.textInput}
 								placeholder={t(

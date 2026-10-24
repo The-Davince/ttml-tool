@@ -118,7 +118,13 @@ export const SyncModeRibbonBar: FC = forwardRef<HTMLDivElement>(
 								width: "8em",
 							}}
 							value={syncTimeOffset}
-							onChange={(e) => setSyncTimeOffset(e.target.valueAsNumber)}
+							onChange={(e) =>
+									setSyncTimeOffset(
+											Number.isNaN(e.target.valueAsNumber)
+													? 0
+													: e.target.valueAsNumber,
+									)
+							}
 						>
 							<TextField.Slot />
 							<TextField.Slot>ms</TextField.Slot>

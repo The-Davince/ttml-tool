@@ -42,6 +42,7 @@ import {
 import {
 	isDirtyAtom,
 	lyricLinesAtom,
+	markLyricSavedAtom,
 	newLyricLinesAtom,
 	projectIdAtom,
 	redoLyricLinesAtom,
@@ -186,6 +187,7 @@ export const useTopMenuActions = () => {
 			}
 			const b = new Blob([result.data], { type: "text/xml" });
 			saveFile(b, saveFileName).catch(topMenuLogger.error);
+			store.set(markLyricSavedAtom);
 		} catch (e) {
 			topMenuLogger.error("Failed to save TTML file", e);
 		}

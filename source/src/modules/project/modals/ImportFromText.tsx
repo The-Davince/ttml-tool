@@ -17,7 +17,11 @@ import {
 	confirmDialogAtom,
 	importFromTextDialogAtom,
 } from "$/states/dialogs.ts";
-import { isDirtyAtom, lyricLinesAtom } from "$/states/main.ts";
+import {
+	isDirtyAtom,
+	lyricLinesAtom,
+	markLyricSavedAtom,
+} from "$/states/main.ts";
 import { type LyricLine, newLyricLine, newLyricWord } from "$/types/ttml";
 
 // import styles from "./ImportFromText.module.css";
@@ -271,6 +275,7 @@ export const ImportFromText = () => {
 				lyricLines: result,
 				metadata: [],
 			});
+			store.set(markLyricSavedAtom);
 		},
 		[store],
 	);

@@ -530,6 +530,30 @@
 	align-items: flex-end;
 }
 
+.permissionSelect {
+	flex-shrink: 0;
+	border: 1px solid var(--gray-a7);
+	background: var(--color-panel-solid, var(--gray-1));
+	color: var(--gray-11);
+	border-radius: 10px;
+	font-family: inherit;
+	font-size: 11.5px;
+	padding: 7px 6px;
+	height: 40px;
+	cursor: pointer;
+	outline: none;
+	transition: border-color 0.15s ease;
+}
+
+.permissionSelect:focus {
+	border-color: var(--accent-8);
+}
+
+.permissionSelect[data-mode="full"] {
+	color: var(--orange-11);
+	border-color: var(--orange-a7);
+}
+
 .textInput {
 	flex: 1;
 	resize: none;

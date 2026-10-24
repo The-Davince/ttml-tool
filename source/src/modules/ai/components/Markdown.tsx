@@ -1,6 +1,8 @@
 import { Fragment, createElement, type ReactNode } from "react";
 import styles from "./Markdown.module.css";
 
+const isSafeHref = (href: string) => /^https?:\/\//i.test(href);
+
 const renderInline = (text: string, keyBase: string): ReactNode[] => {
 	const nodes: ReactNode[] = [];
 	const re =
@@ -28,7 +30,7 @@ const renderInline = (text: string, keyBase: string): ReactNode[] => {
 			);
 		} else if (tok.startsWith("[")) {
 			const mm = /\[([^\]]+)\]\(([^)\s]+)\)/.exec(tok);
-			if (mm) {
+			if (mm && isSafeHref(mm[2])) {
 				nodes.push(
 					<a
 						key={key()}

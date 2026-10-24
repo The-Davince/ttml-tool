@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { audioEngine } from "$/modules/audio/audio-engine";
 import {
 	audioEngineStateAtom,
+	audioPlayingAtom,
 	currentDurationAtom,
 	loadedAudioAtom,
 } from "$/modules/audio/states";
@@ -17,6 +18,7 @@ import { HoverGuide } from "./HoverGuide";
 export const AudioSlider = () => {
 	const currentDuration = useAtomValue(currentDurationAtom);
 	const engineState = useAtomValue(audioEngineStateAtom);
+	const audioPlaying = useAtomValue(audioPlayingAtom);
 	const audioFile = useAtomValue(loadedAudioAtom);
 	const lyricLines = useAtomValue(lyricLinesAtom);
 	const selectedLines = useAtomValue(selectedLinesAtom);
@@ -28,6 +30,7 @@ export const AudioSlider = () => {
 
 	const isScrubbingRef = useRef(false);
 	const scrubProgressRef = useRef(0);
+	const [scrubbing, setScrubbing] = useState(false);
 	const [sliderWidthPx, setSliderWidthPx] = useState(0);
 
 	const {
@@ -60,30 +63,40 @@ export const AudioSlider = () => {
 		return () => observer.disconnect();
 	}, []);
 
+	const renderCursor = useCallback(() => {
+		if (currentDuration > 0 && cursorRef.current && sliderWidthPx > 0) {
+			let progress = 0;
+
+			if (isScrubbingRef.current) {
+				progress = scrubProgressRef.current;
+			} else {
+				progress = audioEngine.musicCurrentTime / (currentDuration / 1000);
+			}
+
+			const xPos = progress * sliderWidthPx;
+			cursorRef.current.style.transform = `translateX(${xPos}px)`;
+
+			if (maskRef.current) {
+				maskRef.current.style.transform = `scaleX(${progress})`;
+			}
+		}
+	}, [currentDuration, sliderWidthPx]);
+
+	// 仅在播放或拖动进度时持续刷新游标, 其余时刻画一帧即停
 	useEffect(() => {
 		let rafId: number;
-		const renderCursor = () => {
-			if (currentDuration > 0 && cursorRef.current && sliderWidthPx > 0) {
-				let progress = 0;
-
-				if (isScrubbingRef.current) {
-					progress = scrubProgressRef.current;
-				} else {
-					progress = audioEngine.musicCurrentTime / (currentDuration / 1000);
-				}
-
-				const xPos = progress * sliderWidthPx;
-				cursorRef.current.style.transform = `translateX(${xPos}px)`;
-
-				if (maskRef.current) {
-					maskRef.current.style.transform = `scaleX(${progress})`;
-				}
+		const loop = () => {
+			renderCursor();
+			if (audioPlaying || isScrubbingRef.current) {
+				rafId = requestAnimationFrame(loop);
 			}
-			rafId = requestAnimationFrame(renderCursor);
 		};
-		rafId = requestAnimationFrame(renderCursor);
+		renderCursor();
+		if (audioPlaying || scrubbing) {
+			rafId = requestAnimationFrame(loop);
+		}
 		return () => cancelAnimationFrame(rafId);
-	}, [currentDuration, sliderWidthPx]);
+	}, [audioPlaying, scrubbing, renderCursor]);
 
 	const selectedRegions = useMemo(() => {
 		if (currentDuration <= 0 || sliderWidthPx <= 0) return [];
@@ -115,6 +128,7 @@ export const AudioSlider = () => {
 
 			isScrubbingRef.current = true;
 			scrubProgressRef.current = calculateProgress(e.clientX);
+			setScrubbing(true);
 
 			const handleScrubMove = (moveEvent: MouseEvent) => {
 				scrubProgressRef.current = calculateProgress(moveEvent.clientX);
@@ -122,6 +136,7 @@ export const AudioSlider = () => {
 
 			const handleScrubUp = (upEvent: MouseEvent) => {
 				isScrubbingRef.current = false;
+				setScrubbing(false);
 				const finalProgress = calculateProgress(upEvent.clientX);
 				audioEngine.seekMusic((finalProgress * currentDuration) / 1000);
 
@@ -132,7 +147,7 @@ export const AudioSlider = () => {
 			window.addEventListener("mousemove", handleScrubMove);
 			window.addEventListener("mouseup", handleScrubUp);
 		},
-		[currentDuration, sliderWidthPx, isDraggingRef],
+		[currentDuration, sliderWidthPx, isDraggingRef, setScrubbing],
 	);
 
 	return (

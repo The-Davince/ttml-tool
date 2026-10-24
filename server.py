@@ -18,8 +18,10 @@
     POST /api/qrc-to-ttml      QRC 文件 → Ruby TTML 转换 (加密/明文/分段三种输入)
 """
 import json
+import ipaddress
 import os
 import re
+import socket
 import socketserver
 import ssl
 import subprocess
@@ -218,10 +220,16 @@ def _strip_url_prefix(title: str) -> str:
     return re.sub(r"^[A-Za-z0-9.-]+\.[a-z]{2,}(?:\.[a-z]{2,})?(https?://)", r"\1", title)
 
 
-# Windows 下 Python 自带 SSL 时常因系统证书链不全而报
-# "unable to get local issuer certificate", 这里在证书校验失败时
-# 自动用免校验上下文重试一次 (本地工具场景下可接受)。
-_SSL_RETRY_CTX = ssl._create_unverified_context()
+# 瞬态网络错误 (Cloudflare 等边缘节点偶发 RST, 如 WinError 10054) 应重试;
+# 真实的 HTTP 4xx/5xx 响应 (HTTPError) 默认不重试, 仅重试少数边缘超时码。
+_TRANSIENT_CODES = (408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 524)
+_TRANSIENT_EXC = (
+    ConnectionResetError,
+    ConnectionAbortedError,
+    BrokenPipeError,
+    RemoteDisconnected,
+    TimeoutError,
+)
 
 
 def _is_ssl_verify_error(e: Exception) -> bool:
@@ -260,7 +268,7 @@ def _is_transient_conn(e: Exception) -> bool:
 
 
 def _urlopen_tls(req: Request, timeout: int, retries: int = 3):
-    """urlopen 包装: 证书校验失败时改用免校验上下文; 瞬态连接错误重试几次
+    """urlopen 包装: 瞬态连接错误重试几次, 证书校验失败直接报错
 
     注: 每次重试都重建一个相同内容的 Request, 避免部分请求对象在一次失败后
     内部状态 (如已发送的 body) 不可复用。
@@ -272,13 +280,14 @@ def _urlopen_tls(req: Request, timeout: int, retries: int = 3):
             method=req.get_method(),
         )
         try:
-            try:
-                return urlopen(retry_req, timeout=timeout)
-            except Exception as e:
-                if _is_ssl_verify_error(e):
-                    return urlopen(retry_req, timeout=timeout, context=_SSL_RETRY_CTX)
-                raise
+            return urlopen(retry_req, timeout=timeout)
         except Exception as e:
+            if _is_ssl_verify_error(e):
+                raise JSONError(
+                    502,
+                    f"目标 {req.full_url} 的 TLS 证书校验失败, 已拒绝连接 "
+                    f"(可能遭遇中间人攻击或系统证书链不全, 不做免校验降级): {e}",
+                ) from e
             last_exc = e
             if _is_transient_conn(e) and attempt < retries - 1:
                 time.sleep(0.6 * (attempt + 1))
@@ -554,10 +563,38 @@ class TextExtractor(HTMLParser):
             self._chunks.append(data)
 
 
+def _is_private_host(url: str) -> bool:
+    """解析目标主机, 判断是否解析到私网/环回/链路本地地址, 防止 SSRF 打内网"""
+    host = urlparse.urlparse(url).hostname
+    if not host:
+        return True
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except Exception:
+        return True
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return True
+    return False
+
+
 def do_fetch_page(url: str) -> dict:
     parsed = urlparse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise JSONError(400, "仅支持 http/https 链接")
+    if not os.environ.get("TTML_ALLOW_PRIVATE_HOST") and _is_private_host(url):
+        raise JSONError(403, "目标地址解析到内网/保留地址, 已拒绝访问")
     req = Request(url, headers={"User-Agent": BROWSER_UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"})
     with urlopen(req, timeout=FETCH_TIMEOUT) as resp:
         content_type = resp.headers.get("Content-Type", "")
@@ -2507,8 +2544,15 @@ class Handler(SimpleHTTPRequestHandler):
             pass
 
     def _read_json_body(self) -> dict:
-        length = int(self.headers.get("Content-Length") or 0)
-        if length <= 0 or length > 8 * 1024 * 1024:
+        length = self.headers.get("Content-Length")
+        if length is None:
+            if self.command in ("POST", "PUT"):
+                raise JSONError(400, "缺少请求体")
+            return {}
+        length = int(length or 0)
+        if length > 8 * 1024 * 1024:
+            raise JSONError(413, "请求体过大")
+        if length <= 0:
             return {}
         try:
             return json.loads(self.rfile.read(length).decode("utf-8"))
@@ -2728,14 +2772,20 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def end_headers(self):
-        # 允许前端跨源访问 API（设置面板填写 http://host:port 时）
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header(
-            "Access-Control-Allow-Headers", "Content-Type, Authorization"
-        )
-        self.send_header("Access-Control-Max-Age", "86400")
-        self.send_header("Cross-Origin-Resource-Policy", "cross-origin")
+        # 仅对同源页面或无 Origin 的本地调用回显 CORS 头,
+        # 避免任意网站借助 CORS 直接调用本地 API
+        origin = self.headers.get("Origin")
+        host = self.headers.get("Host")
+        if not origin or (host and origin == f"http://{host}"):
+            self.send_header("Access-Control-Allow-Origin", origin or "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header(
+                "Access-Control-Allow-Headers", "Content-Type, Authorization"
+            )
+            self.send_header("Access-Control-Max-Age", "86400")
+            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        else:
+            self.send_header("Cross-Origin-Resource-Policy", "cross-origin")
         for k, v in SECURITY_HEADERS.items():
             self.send_header(k, v)
         # index.html / sw.js 不缓存, 保证版本更新即时生效; 其余资源带哈希可长缓存

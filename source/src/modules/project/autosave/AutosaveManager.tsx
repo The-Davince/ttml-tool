@@ -10,6 +10,7 @@ import {
 	isDirtyAtom,
 	lastSavedTimeAtom,
 	lyricLinesAtom,
+	markLyricSavedAtom,
 	projectIdAtom,
 	SaveStatus,
 	saveStatusAtom,
@@ -26,6 +27,7 @@ export const AutosaveManager = () => {
 
 	const setSaveStatus = useSetAtom(saveStatusAtom);
 	const setLastSavedTime = useSetAtom(lastSavedTimeAtom);
+	const markLyricSaved = useSetAtom(markLyricSavedAtom);
 
 	useEffect(() => {
 		if (!enabled) return;
@@ -47,16 +49,17 @@ export const AutosaveManager = () => {
 				setSaveStatus(SaveStatus.Saving);
 				projectLogger.info("Auto-saving project...", projectId);
 
-				autoSaveProject(
-					projectId,
-					lyricLines,
-					limit,
-					intervalMinutes * 60 * 1000,
-				)
-					.then(() => {
-						setSaveStatus(SaveStatus.Saved);
-						setLastSavedTime(Date.now());
-					})
+					autoSaveProject(
+						projectId,
+						lyricLines,
+						limit,
+						intervalMinutes * 60 * 1000,
+					)
+						.then(() => {
+							setSaveStatus(SaveStatus.Saved);
+							setLastSavedTime(Date.now());
+							markLyricSaved();
+						})
 					.catch((err) => {
 						projectLogger.error("Failed to autosave project", err);
 						setSaveStatus(SaveStatus.Pending);
@@ -75,6 +78,7 @@ export const AutosaveManager = () => {
 		projectId,
 		setSaveStatus,
 		setLastSavedTime,
+		markLyricSaved,
 		intervalMinutes,
 	]);
 

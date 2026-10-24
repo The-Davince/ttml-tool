@@ -264,6 +264,14 @@ const LyricWordViewEditSpan = ({
 
 						const isCopyingWords = evt.ctrlKey || evt.metaKey;
 						editLyricLines((state) => {
+							const targetLine = state.lyricLines.find(
+								({ id }) => id === line.id,
+							);
+							if (!targetLine) return;
+							const targetIndex = targetLine.words.findIndex(
+								(w) => w.id === word.id,
+							);
+							if (targetIndex < 0) return;
 							let collectedWords: LyricWord[] = [];
 							for (const line of state.lyricLines) {
 								const words = line.words.filter((w) => selectedWords.has(w.id));
@@ -279,14 +287,6 @@ const LyricWordViewEditSpan = ({
 									if (deletedAtBounds) normalizeLineTime(line);
 								}
 							}
-							const targetLine = state.lyricLines.find(
-								({ id }) => id === line.id,
-							);
-							if (!targetLine) throw new Error("Target line not found");
-							const targetIndex = targetLine.words.findIndex(
-								(w) => w.id === word.id,
-							);
-							if (targetIndex < 0) throw new Error("Target word not found");
 							if (isCopyingWords) {
 								collectedWords = collectedWords.map((w) => ({
 									...w,

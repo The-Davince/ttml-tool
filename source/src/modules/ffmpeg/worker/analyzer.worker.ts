@@ -38,6 +38,7 @@ let totalDuration = 0;
 let isAnalyzing = false;
 
 let opfsAccessHandle: FileSystemSyncAccessHandle | null = null;
+let opfsFileHandle: FileSystemFileHandle | null = null;
 
 const WRITE_BUFFER_CAPACITY = 1024 * 1024;
 const pcmWriteBuffer = new Float32Array(WRITE_BUFFER_CAPACITY);
@@ -46,6 +47,30 @@ let pcmWriteOffset = 0;
 const TARGET_SAMPLE_RATE = 44100;
 
 const opfsChannel = new BroadcastChannel("opfs-lock-channel");
+
+opfsChannel.onmessage = (e) => {
+	if (e.data === "DEMAND_LOCK" && opfsAccessHandle) {
+		try {
+			if (pcmWriteOffset > 0) {
+				opfsAccessHandle.write(pcmWriteBuffer.subarray(0, pcmWriteOffset), {
+					at: totalSamples * 4 - pcmWriteOffset * 4,
+				});
+				pcmWriteOffset = 0;
+			}
+			opfsAccessHandle.flush();
+			opfsAccessHandle.close();
+		} catch (err) {
+			console.warn("[Analyzer] release OPFS handle failed:", err);
+		}
+		opfsAccessHandle = null;
+		opfsChannel.postMessage("OPFS_RELEASED");
+	}
+};
+
+async function reacquireOpfsAccessHandle(): Promise<void> {
+	if (opfsAccessHandle || !opfsFileHandle) return;
+	opfsAccessHandle = await acquireOpfsAccessHandle(opfsFileHandle, opfsChannel);
+}
 
 const BATCH_TRIPLETS = 1000;
 const BUFFER_SIZE = BATCH_TRIPLETS * 3;
@@ -168,6 +193,14 @@ async function analyzeLoop() {
 			const frameSamples =
 				ffmpegModule._wasm_decoder_get_frame_samples(decoderPtr);
 
+			if (frameSamples > 0) {
+				try {
+					await reacquireOpfsAccessHandle();
+				} catch {
+					console.warn("[Analyzer] reacquire OPFS handle failed, skip write");
+				}
+			}
+
 			if (opfsAccessHandle && frameSamples > 0) {
 				const ptr = ffmpegModule._wasm_decoder_get_channel_ptr(decoderPtr, 0);
 				const pcmView = new Float32Array(
@@ -178,7 +211,7 @@ async function analyzeLoop() {
 
 				if (pcmWriteOffset + frameSamples > WRITE_BUFFER_CAPACITY) {
 					const flushData = pcmWriteBuffer.subarray(0, pcmWriteOffset);
-					opfsAccessHandle.write(flushData);
+					opfsAccessHandle.write(flushData, { at: totalSamples * 4 - flushData.byteLength });
 					pcmWriteOffset = 0;
 				}
 
@@ -224,7 +257,9 @@ async function analyzeLoop() {
 		if (opfsAccessHandle) {
 			if (pcmWriteOffset > 0) {
 				const finalData = pcmWriteBuffer.subarray(0, pcmWriteOffset);
-				opfsAccessHandle.write(finalData);
+				opfsAccessHandle.write(finalData, {
+					at: totalSamples * 4 - finalData.byteLength,
+				});
 				pcmWriteOffset = 0;
 			}
 
@@ -242,6 +277,8 @@ async function analyzeLoop() {
 						analyzer.byte_ptr,
 						analyzer.byte_capacity,
 					);
+
+					await reacquireOpfsAccessHandle();
 
 					const bytesRead = opfsAccessHandle.read(uint8View, { at: 0 });
 					const samplesRead = Math.floor(bytesRead / 4);
@@ -326,6 +363,7 @@ self.onmessage = async (e: MessageEvent) => {
 				create: true,
 			});
 
+			opfsFileHandle = fileHandle;
 			opfsAccessHandle = await acquireOpfsAccessHandle(fileHandle, opfsChannel);
 			opfsAccessHandle.truncate(0);
 			pcmWriteOffset = 0;
@@ -352,6 +390,7 @@ self.onmessage = async (e: MessageEvent) => {
 				opfsAccessHandle.close();
 				opfsAccessHandle = null;
 			}
+			opfsFileHandle = null;
 
 			self.postMessage({
 				type: "ANALYZE_ERROR",

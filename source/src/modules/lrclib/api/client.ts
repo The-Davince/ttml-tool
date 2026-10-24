@@ -2,6 +2,23 @@ import { lrcLibLogger } from "../logger";
 import type { LrcLibTrack } from "../types";
 
 const BASE_URL = "https://lrclib.net/api";
+const REQUEST_TIMEOUT_MS = 15000;
+
+const fetchWithTimeout = (
+	url: string,
+): Promise<Response> => {
+	if (typeof AbortSignal.timeout === "function") {
+		return fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+	}
+	const controller = new AbortController();
+	const timer = setTimeout(
+		() => controller.abort(),
+		REQUEST_TIMEOUT_MS,
+	);
+	return fetch(url, { signal: controller.signal }).finally(() =>
+		clearTimeout(timer),
+	);
+};
 
 export const LrcLibApi = {
 	/**
@@ -13,13 +30,13 @@ export const LrcLibApi = {
 	async search(query: string): Promise<LrcLibTrack[]> {
 		if (!query.trim()) return [];
 
-		try {
-			const response = await fetch(
-				`${BASE_URL}/search?q=${encodeURIComponent(query)}`,
-			);
-			if (!response.ok) {
-				throw new Error(`LRCLIB Search failed: ${response.statusText}`);
-			}
+	try {
+		const response = await fetchWithTimeout(
+			`${BASE_URL}/search?q=${encodeURIComponent(query)}`,
+		);
+		if (!response.ok) {
+			throw new Error(`LRCLIB Search failed: ${response.statusText}`);
+		}
 			const data = (await response.json()) as LrcLibTrack[];
 			return data;
 		} catch (error) {
@@ -35,11 +52,11 @@ export const LrcLibApi = {
 	 * @throws 在 API 请求失败时抛出错误
 	 */
 	async getById(id: number): Promise<LrcLibTrack> {
-		try {
-			const response = await fetch(`${BASE_URL}/get/${id}`);
-			if (!response.ok) {
-				throw new Error(`LRCLIB Get failed: ${response.statusText}`);
-			}
+	try {
+		const response = await fetchWithTimeout(`${BASE_URL}/get/${id}`);
+		if (!response.ok) {
+			throw new Error(`LRCLIB Get failed: ${response.statusText}`);
+		}
 			return (await response.json()) as LrcLibTrack;
 		} catch (error) {
 			lrcLibLogger.error("LRCLIB API Error:", error);

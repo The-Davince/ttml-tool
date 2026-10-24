@@ -8,11 +8,11 @@ import {
         nextAIStepId,
         nextAITurnId,
 } from "$/modules/ai/states";
+import { aiPermissionModeAtom } from "$/modules/ai/permission";
 import { getAgentTool, getToolSchemas } from "$/modules/ai/tools";
+import { confirmDialogAtom } from "$/states/dialogs.ts";
 import { lyricLinesAtom } from "$/states/main.ts";
 import { globalStore } from "$/states/store.ts";
-
-const MAX_TOOL_ROUNDS = 12;
 
 interface LLMMessage {
         role: "system" | "user" | "assistant" | "tool";
@@ -35,6 +35,52 @@ let abortController: AbortController | null = null;
 
 export const abortAgentRun = () => {
         abortController?.abort();
+};
+
+const MAX_TOOL_ROUNDS = 12;
+const MAX_MESSAGE_HISTORY = 40;
+const WRITE_TOOL_NAMES = new Set([
+        "import_qq_lyric",
+        "merge_lines",
+        "merge_syllables",
+        "delete_lines",
+        "insert_line",
+        "replace_word_text",
+        "set_word_ruby",
+        "batch_set_ruby",
+        "auto_romaji",
+        "set_line_roman",
+        "set_line_translation",
+        "set_metadata",
+]);
+
+const askWritePermission = (toolName: string): Promise<boolean> => {
+        if (globalStore.get(aiPermissionModeAtom) === "full") return Promise.resolve(true);
+        return new Promise((resolve) => {
+                globalStore.set(confirmDialogAtom, {
+                        open: true,
+                        title: "AI 请求修改歌词文档",
+                        description: `AI 正在尝试调用写操作工具「${getToolLabel(toolName)}」修改你的歌词文档，确认允许吗？`,
+                        onConfirm: () => resolve(true),
+                });
+                const unbind = globalStore.sub(confirmDialogAtom, () => {
+                        if (!globalStore.get(confirmDialogAtom).open) {
+                                unbind();
+                                resolve(false);
+                        }
+                });
+        });
+};
+
+const trimLlmMessages = (): void => {
+        if (llmMessages.length <= MAX_MESSAGE_HISTORY) return;
+        llmMessages = llmMessages.slice(-MAX_MESSAGE_HISTORY);
+        while (
+                llmMessages.length > 0 &&
+                (llmMessages[0].role === "tool" || llmMessages[0].tool_calls)
+        ) {
+                llmMessages.shift();
+        }
 };
 
 const buildSystemPrompt = (): string => {
@@ -563,9 +609,7 @@ export async function runAgentTurn(
         const controller = abortController;
 
         llmMessages.push({ role: "user", content: userText });
-        if (llmMessages.length > 40) {
-                llmMessages = llmMessages.slice(-40);
-        }
+        trimLlmMessages();
 
         const finish = (patch: Partial<AITurn>) => {
                 updateTurn(turn.id, (t) => ({
@@ -578,8 +622,10 @@ export async function runAgentTurn(
                 abortController = null;
         };
 
+        let startLen = llmMessages.length;
         try {
                 for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+                        startLen = llmMessages.length;
                         const thinkStepId = appendStep(turn.id, {
                                 id: nextAIStepId(),
                                 kind: "thinking",
@@ -645,6 +691,14 @@ export async function runAgentTurn(
                                         try {
                                                 const tool = getAgentTool(tc.function.name);
                                                 if (!tool) throw new Error(`未知工具：${tc.function.name}`);
+                                                if (
+                                                        WRITE_TOOL_NAMES.has(tc.function.name) &&
+                                                        !(await askWritePermission(tc.function.name))
+                                                ) {
+                                                        throw new Error(
+                                                                "用户拒绝了本次写操作（修改歌词文档）的确认请求，不要重试该操作，改用只读工具或询问用户",
+                                                        );
+                                                }
                                                 const result = await tool.execute(args);
                                                 resultJson = JSON.stringify(result);
                                                 updateStep(turn.id, stepId, {
@@ -683,6 +737,7 @@ export async function runAgentTurn(
                 });
         } catch (e) {
                 if (controller.signal.aborted) {
+                        llmMessages.length = startLen;
                         appendStep(turn.id, {
                                 id: nextAIStepId(),
                                 kind: "abort",
@@ -690,8 +745,6 @@ export async function runAgentTurn(
                                 status: "error",
                         });
                         finish({ status: "aborted" });
-                        if (llmMessages[llmMessages.length - 1]?.role === "user")
-                                llmMessages.pop();
                         return;
                 }
                 const msg = e instanceof Error ? e.message : String(e);

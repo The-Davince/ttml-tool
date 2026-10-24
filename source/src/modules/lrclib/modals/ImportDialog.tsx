@@ -28,7 +28,7 @@ import {
 } from "@radix-ui/themes";
 import classNames from "classnames";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-toastify";
 import { uid } from "uid";
@@ -41,6 +41,7 @@ import {
 import {
 	isDirtyAtom,
 	lyricLinesAtom,
+	markLyricSavedAtom,
 	projectIdAtom,
 	saveFileNameAtom,
 } from "$/states/main.ts";
@@ -64,12 +65,14 @@ export const ImportFromLRCLIB = () => {
 	const setLyricLines = useSetAtom(lyricLinesAtom);
 	const setProjectId = useSetAtom(projectIdAtom);
 	const setSaveFileName = useSetAtom(saveFileNameAtom);
+	const markLyricSaved = useSetAtom(markLyricSavedAtom);
 	const isDirty = useAtomValue(isDirtyAtom);
 	const setConfirmDialog = useSetAtom(confirmDialogAtom);
 
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState<LrcLibTrack[]>([]);
 	const [loading, setLoading] = useState(false);
+	const searchRequestIdRef = useRef(0);
 
 	const [hasSearched, setHasSearched] = useState(false);
 
@@ -81,18 +84,23 @@ export const ImportFromLRCLIB = () => {
 
 	const handleSearch = useCallback(async () => {
 		if (!query.trim()) return;
+		const requestId = ++searchRequestIdRef.current;
 		setLoading(true);
 		setHasSearched(true);
 		setResults([]);
 
 		try {
 			const data = await LrcLibApi.search(query);
+			if (requestId !== searchRequestIdRef.current) return;
 			setResults(data);
 		} catch (e) {
 			lrcLibLogger.error("LRCLIB Search Error", e);
+			if (requestId !== searchRequestIdRef.current) return;
 			toast.error(t("lrclib.searchError", "搜索失败，请检查网络或稍后重试"));
 		} finally {
-			setLoading(false);
+			if (requestId === searchRequestIdRef.current) {
+				setLoading(false);
+			}
 		}
 	}, [query, t]);
 
@@ -127,6 +135,7 @@ export const ImportFromLRCLIB = () => {
 				}
 
 				setLyricLines(ttmlData);
+				markLyricSaved();
 				setProjectId(uid());
 				const safeFilename = `${track.artistName} - ${track.name}.ttml`.replace(
 					/[\\/:*?"<>|]/g,
@@ -146,6 +155,7 @@ export const ImportFromLRCLIB = () => {
 		},
 		[
 			setLyricLines,
+			markLyricSaved,
 			setProjectId,
 			setSaveFileName,
 			setIsOpen,

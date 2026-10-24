@@ -131,7 +131,7 @@ export interface AudioReader {
 }
 //#endregion
 
-//#region Core Implementation
+	//#region Core Implementation
 class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
 	private controlBlock: Int32Array;
 	private channelBuffers: Float32Array[] = [];
@@ -154,6 +154,18 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
 				new Float32Array(sab, offset, this.capacityFrames),
 			);
 		}
+	}
+
+	// Int32 索引单调累加约 13.5 小时(44.1kHz)后回绕为负, 差值需按 2^32 周期归一化
+	private normDelta(a: number, b: number): number {
+		const diff = a - b;
+		return diff < 0 ? diff + 0x100000000 : diff;
+	}
+
+	// 回绕后的负索引取环位置, % 在 JS 里会返回负数
+	private ringPosOf(index: number): number {
+		const pos = index % this.capacityFrames;
+		return pos < 0 ? pos + this.capacityFrames : pos;
 	}
 
 	//#region MainAudioController
@@ -190,7 +202,7 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
 	getAvailableWriteSpace(): number {
 		const writeIndex = Atomics.load(this.controlBlock, STATE_WRITE_INDEX);
 		const readIndex = Atomics.load(this.controlBlock, STATE_READ_INDEX);
-		return this.capacityFrames - (writeIndex - readIndex);
+		return this.capacityFrames - this.normDelta(writeIndex, readIndex);
 	}
 
 	writePartial(
@@ -201,14 +213,15 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
 		const writeIndex = Atomics.load(this.controlBlock, STATE_WRITE_INDEX);
 		const readIndex = Atomics.load(this.controlBlock, STATE_READ_INDEX);
 
-		const availableSpace = this.capacityFrames - (writeIndex - readIndex);
+		const availableSpace =
+			this.capacityFrames - this.normDelta(writeIndex, readIndex);
 		const writeAmount = Math.min(length, availableSpace);
 
 		if (writeAmount === 0) {
 			return 0;
 		}
 
-		const ringPos = writeIndex % this.capacityFrames;
+		const ringPos = this.ringPosOf(writeIndex);
 		const spaceToEnd = this.capacityFrames - ringPos;
 
 		for (let c = 0; c < this.channels; c++) {
@@ -251,7 +264,8 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
 		const writeIndex = Atomics.load(this.controlBlock, STATE_WRITE_INDEX);
 		const readIndex = Atomics.load(this.controlBlock, STATE_READ_INDEX);
 
-		const availableSpace = this.capacityFrames - (writeIndex - readIndex);
+		const availableSpace =
+			this.capacityFrames - this.normDelta(writeIndex, readIndex);
 
 		if (availableSpace >= minSpaceReq) {
 			return { async: false };
@@ -276,7 +290,7 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
 		const writeIndex = Atomics.load(this.controlBlock, STATE_WRITE_INDEX);
 		const readIndex = Atomics.load(this.controlBlock, STATE_READ_INDEX);
 
-		if (readIndex >= writeIndex) {
+		if (this.normDelta(writeIndex, readIndex) === 0) {
 			return { isDrained: true };
 		}
 
@@ -311,7 +325,7 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
 	getAvailableReadFrames(): number {
 		const writeIndex = Atomics.load(this.controlBlock, STATE_WRITE_INDEX);
 		const readIndex = Atomics.load(this.controlBlock, STATE_READ_INDEX);
-		return writeIndex - readIndex;
+		return this.normDelta(writeIndex, readIndex);
 	}
 
 	readPartial(outputs: Float32Array[], length: number): number {
@@ -321,14 +335,14 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
 
 		const writeIndex = Atomics.load(this.controlBlock, STATE_WRITE_INDEX);
 		const readIndex = Atomics.load(this.controlBlock, STATE_READ_INDEX);
-		const availableData = writeIndex - readIndex;
+		const availableData = this.normDelta(writeIndex, readIndex);
 		const readAmount = Math.min(length, availableData);
 
 		if (readAmount === 0) {
 			return 0;
 		}
 
-		const ringPos = readIndex % this.capacityFrames;
+		const ringPos = this.ringPosOf(readIndex);
 		const spaceToEnd = this.capacityFrames - ringPos;
 		for (let c = 0; c < this.channels; c++) {
 			if (!outputs[c]) continue;
@@ -362,7 +376,9 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
 	rewindReadIndexToPlayback(): void {
 		const playbackIndex = Atomics.load(this.controlBlock, STATE_PLAYBACK_INDEX);
 		const writeIndex = Atomics.load(this.controlBlock, STATE_WRITE_INDEX);
-		const targetIndex = Math.min(writeIndex, Math.max(0, playbackIndex));
+		// 两个索引同周期内单调累加, 回绕后差值仍表示落后帧数
+		const behind = this.normDelta(writeIndex, playbackIndex);
+		const targetIndex = behind > 0 ? writeIndex - behind : writeIndex;
 		Atomics.store(this.controlBlock, STATE_READ_INDEX, targetIndex);
 	}
 

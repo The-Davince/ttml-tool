@@ -11,7 +11,7 @@
 
 import { Box, ContextMenu, Flex, Text } from "@radix-ui/themes";
 import { atom, useAtomValue, useSetAtom, useStore } from "jotai";
-import { selectAtom, splitAtom } from "jotai/utils";
+import { splitAtom } from "jotai/utils";
 import { useSetImmerAtom } from "jotai-immer";
 import { focusAtom } from "jotai-optics";
 import {
@@ -31,6 +31,7 @@ import { audioEngine } from "$/modules/audio/audio-engine.ts";
 import { useLyricListDrag } from "$/modules/lyric-drag/useLyricListDrag";
 import {
 	locateActionAtom,
+	lyricIdToIndexMapAtom,
 	lyricLinesAtom,
 	selectedLinesAtom,
 	ToolMode,
@@ -44,21 +45,6 @@ import { LyricLineView } from "./lyric-line-view";
 const lyricLinesOnlyAtom = splitAtom(
 	focusAtom(lyricLinesAtom, (o) => o.prop("lyricLines")),
 );
-
-const lyricLineIdsAtom = selectAtom(
-	lyricLinesAtom,
-	(state) => state.lyricLines.map((line) => line.id),
-	(prev, next) =>
-		prev.length === next.length && prev.every((id, i) => id === next[i]),
-);
-
-const lyricIdToIndexMapAtom = selectAtom(lyricLineIdsAtom, (ids) => {
-	const map = new Map<string, number>();
-	ids.forEach((id, index) => {
-		map.set(id, index);
-	});
-	return map;
-});
 
 const findCurrentLineIndex = (lines: LyricLine[], currentTime: number) => {
 	const scan = (predicate?: (line: LyricLine) => boolean) => {
