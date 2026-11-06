@@ -1,5 +1,5 @@
 import { ContextMenu } from "@radix-ui/themes";
-import { atom, useAtomValue } from "jotai";
+import { atom, useAtomValue, useSetAtom } from "jotai";
 import { useSetImmerAtom } from "jotai-immer";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -8,7 +8,14 @@ import {
 	findMainLineIndex,
 } from "$/modules/lyric-editor/utils/follow-main-timeline";
 import { lyricLinesAtom, selectedLinesAtom } from "$/states/main";
-import { type LyricLine, newLyricLine, newLyricWord } from "$/types/ttml";
+import { timelineClipboardAtom } from "$/states/timeline-clipboard";
+import { type LyricLine, type LyricWord, newLyricLine, newLyricWord } from "$/types/ttml";
+import {
+	adjustLineTimeAfterPaste,
+	applyClipboardToWord,
+	buildAbsoluteClipboard,
+	buildRelativeClipboard,
+} from "$/modules/lyric-editor/utils/timeline-clipboard";
 
 const selectedLinesSizeAtom = atom((get) => get(selectedLinesAtom).size);
 
@@ -28,6 +35,9 @@ export const LyricLineMenu = ({ lineIndex, syncMode = false}: { lineIndex: numbe
 	const selectedLinesSize = useAtomValue(selectedLinesSizeAtom);
 	const selectedLines = useAtomValue(selectedLinesAtom);
 	const editLyricLines = useSetImmerAtom(lyricLinesAtom);
+	const clipboard = useAtomValue(timelineClipboardAtom);
+	const setClipboard = useSetAtom(timelineClipboardAtom);
+	const canPaste = clipboard !== null && clipboard.entries.length > 0;
 
 	const lineObjs = useAtomValue(lyricLinesAtom);
 	const selectedLineObjs = lineObjs.lyricLines.filter((line) =>
@@ -153,6 +163,116 @@ function applyFollowFlag(lines: LyricLine[], index: number, checked: boolean) {
 			>
 				{t("contextMenu.syncWithMainTimeline", "与主歌词时间轴相同")}
 			</ContextMenu.CheckboxItem>
+			<ContextMenu.Sub>
+				<ContextMenu.SubTrigger>
+					{t("contextMenu.copyTimeline", "复制时间轴")}
+				</ContextMenu.SubTrigger>
+				<ContextMenu.SubContent>
+					<ContextMenu.Item
+						onSelect={() => {
+							const srcLine = lineObjs.lyricLines[lineIndex];
+							if (srcLine && srcLine.words.length > 0) {
+								setClipboard(buildRelativeClipboard(srcLine.words));
+							}
+						}}
+					>
+						{t("contextMenu.copyRelativeTimeline", "相对时间轴")}
+					</ContextMenu.Item>
+					<ContextMenu.Item
+						onSelect={() => {
+							const srcLine = lineObjs.lyricLines[lineIndex];
+							if (srcLine && srcLine.words.length > 0) {
+								setClipboard(buildAbsoluteClipboard(srcLine.words));
+							}
+						}}
+					>
+						{t("contextMenu.copyAbsoluteTimeline", "绝对时间轴")}
+					</ContextMenu.Item>
+				</ContextMenu.SubContent>
+			</ContextMenu.Sub>
+			<ContextMenu.Sub>
+				<ContextMenu.SubTrigger disabled={!canPaste}>
+					{t("contextMenu.pasteTimeline", "粘贴时间轴")}
+				</ContextMenu.SubTrigger>
+				<ContextMenu.SubContent>
+					<ContextMenu.Item
+						disabled={!canPaste}
+						onSelect={() => {
+							if (!clipboard) return;
+							editLyricLines((state) => {
+								const targetLine = state.lyricLines[lineIndex];
+								if (!targetLine || targetLine.words.length === 0) return;
+								const targets: LyricWord[] = targetLine.words;
+								const anchorStart = targets[0].startTime;
+								const oldStart = targetLine.startTime;
+								const oldEnd = targetLine.endTime;
+								const oldFirst = targetLine.words[0]?.startTime ?? 0;
+								const oldLast =
+									targetLine.words[targetLine.words.length - 1]?.endTime ?? 0;
+								const pasted: LyricWord[] = [];
+								const count = Math.min(targets.length, clipboard.entries.length);
+								for (let i = 0; i < count; i++) {
+									const entry = clipboard.entries[i];
+									const targetWord = targets[i];
+									if (!entry || !targetWord) continue;
+									const changed = applyClipboardToWord(
+										targetWord,
+										entry,
+										anchorStart,
+										clipboard.mode,
+									);
+									if (changed) pasted.push(targetWord);
+								}
+								adjustLineTimeAfterPaste(
+									targetLine,
+									oldStart,
+									oldEnd,
+									oldFirst,
+									oldLast,
+									pasted,
+								);
+							});
+						}}
+					>
+						{t("contextMenu.pasteForwardFull", "向后完整粘贴")}
+					</ContextMenu.Item>
+					<ContextMenu.Item
+						disabled={!canPaste}
+						onSelect={() => {
+							if (!clipboard) return;
+							editLyricLines((state) => {
+								const targetLine = state.lyricLines[lineIndex];
+								if (!targetLine || targetLine.words.length === 0) return;
+								const targetWord = targetLine.words[0];
+								const entry = clipboard.entries[0];
+								if (!targetWord || !entry) return;
+								const anchorStart = targetWord.startTime;
+								const oldStart = targetLine.startTime;
+								const oldEnd = targetLine.endTime;
+								const oldFirst = targetLine.words[0]?.startTime ?? 0;
+								const oldLast =
+									targetLine.words[targetLine.words.length - 1]?.endTime ?? 0;
+								const changed = applyClipboardToWord(
+									targetWord,
+									entry,
+									anchorStart,
+									clipboard.mode,
+								);
+								adjustLineTimeAfterPaste(
+									targetLine,
+									oldStart,
+									oldEnd,
+									oldFirst,
+									oldLast,
+									changed ? [targetWord] : [],
+								);
+							});
+						}}
+					>
+						{t("contextMenu.pasteCurrentWord", "只粘贴当前单词")}
+					</ContextMenu.Item>
+				</ContextMenu.SubContent>
+			</ContextMenu.Sub>
 			<ContextMenu.Separator />
 			<ContextMenu.Item
 				onSelect={() => {

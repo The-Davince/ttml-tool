@@ -15,7 +15,15 @@ import {
 	newLyricLine,
 	newLyricWord,
 } from "$/types/ttml";
+import { timelineClipboardAtom } from "$/states/timeline-clipboard";
 import { normalizeLineTime } from "../utils/normalize-line-time";
+import {
+	adjustLineTimeAfterPaste,
+	applyClipboardToWord,
+	buildAbsoluteClipboard,
+	buildRelativeClipboard,
+	collectWordsInOrder,
+} from "../utils/timeline-clipboard";
 
 const selectedLinesSizeAtom = atom((get) => get(selectedLinesAtom).size);
 const selectedWordsSizeAtom = atom((get) => get(selectedWordsAtom).size);
@@ -39,6 +47,104 @@ export const LyricWordMenu = ({
 	const setOpenReplaceWordDialog = useSetAtom(replaceWordDialogAtom);
 	const setEditingWordState = useSetAtom(editingWordStateAtom);
 	const word = useAtomValue(wordAtom);
+	const clipboard = useAtomValue(timelineClipboardAtom);
+	const setClipboard = useSetAtom(timelineClipboardAtom);
+	const canPaste = clipboard !== null && clipboard.entries.length > 0;
+	const lineObjs = useAtomValue(lyricLinesAtom);
+
+	function buildCopyWords(): LyricWord[] {
+		const selectedWords = store.get(selectedWordsAtom);
+		if (selectedWords.size > 0) {
+			return collectWordsInOrder(lineObjs.lyricLines, selectedWords);
+		}
+		const target = lineObjs.lyricLines[lineIndex]?.words[wordIndex];
+		return target ? [target] : [];
+	}
+
+	function pasteToTargets(targetIds: string[]) {
+		if (!clipboard || targetIds.length === 0) return;
+		editLyricLines((state) => {
+			const entries = clipboard.entries;
+			const lineByWord = new Map<string, LyricLine>();
+			const wordById = new Map<string, LyricWord>();
+			for (const line of state.lyricLines) {
+				for (const item of line.words) {
+					lineByWord.set(item.id, line);
+					wordById.set(item.id, item);
+				}
+			}
+			let firstWord: LyricWord | undefined;
+			for (const id of targetIds) {
+				const found = wordById.get(id);
+				if (found) {
+					firstWord = found;
+					break;
+				}
+			}
+			if (!firstWord) return;
+			const anchorStart = firstWord.startTime;
+			const affectedLines = new Map<
+				LyricLine,
+				{ start: number; end: number; first: number; last: number; words: LyricWord[] }
+			>();
+			for (const line of state.lyricLines) {
+				affectedLines.set(line, {
+					start: line.startTime,
+					end: line.endTime,
+					first: line.words[0]?.startTime ?? 0,
+					last: line.words[line.words.length - 1]?.endTime ?? 0,
+					words: [],
+				});
+			}
+			const count = Math.min(targetIds.length, entries.length);
+			for (let i = 0; i < count; i++) {
+				const entry = entries[i];
+				if (!entry) continue;
+				const targetWord = wordById.get(targetIds[i]);
+				if (!targetWord) continue;
+				const changed = applyClipboardToWord(targetWord, entry, anchorStart, clipboard.mode);
+				if (!changed) continue;
+				const owner = lineByWord.get(targetWord.id);
+				if (owner) affectedLines.get(owner)?.words.push(targetWord);
+			}
+			for (const line of state.lyricLines) {
+				const info = affectedLines.get(line);
+				if (!info || info.words.length === 0) continue;
+				adjustLineTimeAfterPaste(
+					line,
+					info.start,
+					info.end,
+					info.first,
+					info.last,
+					info.words,
+				);
+			}
+		});
+	}
+
+	function collectForwardTargets(full: boolean): string[] {
+		if (selectedWordsSize > 1) {
+			return collectWordsInOrder(
+				lineObjs.lyricLines,
+				store.get(selectedWordsAtom),
+			).map((item) => item.id);
+		}
+		if (!full) {
+			const target = lineObjs.lyricLines[lineIndex]?.words[wordIndex];
+			return target ? [target.id] : [];
+		}
+		const flat: LyricWord[] = [];
+		for (const line of lineObjs.lyricLines) {
+			for (const item of line.words) {
+				flat.push(item);
+			}
+		}
+		const startIndex = flat.findIndex(
+			(item) => item.id === lineObjs.lyricLines[lineIndex]?.words[wordIndex]?.id,
+		);
+		if (startIndex < 0) return [];
+		return flat.slice(startIndex).map((item) => item.id);
+	}
 
 	return (
 		<>
@@ -154,6 +260,63 @@ export const LyricWordMenu = ({
 			</ContextMenu.Item>
 
 			<ContextMenu.Separator />
+			<ContextMenu.Sub>
+				<ContextMenu.SubTrigger>
+					{t("contextMenu.copyTimeline", "复制时间轴")}
+				</ContextMenu.SubTrigger>
+				<ContextMenu.SubContent>
+					<ContextMenu.Item
+						onSelect={() => {
+							const srcWords = buildCopyWords();
+							if (srcWords.length > 0) setClipboard(buildRelativeClipboard(srcWords));
+						}}
+					>
+						{t("contextMenu.copyRelativeTimeline", "相对时间轴")}
+					</ContextMenu.Item>
+					<ContextMenu.Item
+						onSelect={() => {
+							const srcWords = buildCopyWords();
+							if (srcWords.length > 0) setClipboard(buildAbsoluteClipboard(srcWords));
+						}}
+					>
+						{t("contextMenu.copyAbsoluteTimeline", "绝对时间轴")}
+					</ContextMenu.Item>
+				</ContextMenu.SubContent>
+			</ContextMenu.Sub>
+			{selectedWordsSize > 1 ? (
+				<ContextMenu.Item
+					disabled={!canPaste}
+					onSelect={() => {
+						pasteToTargets(collectForwardTargets(false));
+					}}
+				>
+					{t("contextMenu.pasteTimeline", "粘贴时间轴")}
+				</ContextMenu.Item>
+			) : (
+				<ContextMenu.Sub>
+					<ContextMenu.SubTrigger disabled={!canPaste}>
+						{t("contextMenu.pasteTimeline", "粘贴时间轴")}
+					</ContextMenu.SubTrigger>
+					<ContextMenu.SubContent>
+						<ContextMenu.Item
+							disabled={!canPaste}
+							onSelect={() => {
+								pasteToTargets(collectForwardTargets(true));
+							}}
+						>
+							{t("contextMenu.pasteForwardFull", "向后完整粘贴")}
+						</ContextMenu.Item>
+						<ContextMenu.Item
+							disabled={!canPaste}
+							onSelect={() => {
+								pasteToTargets(collectForwardTargets(false));
+							}}
+						>
+							{t("contextMenu.pasteCurrentWord", "只粘贴当前单词")}
+						</ContextMenu.Item>
+					</ContextMenu.SubContent>
+				</ContextMenu.Sub>
+			)}
 		</>
 	);
 
