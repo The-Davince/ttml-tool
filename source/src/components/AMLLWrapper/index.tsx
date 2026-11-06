@@ -26,7 +26,19 @@ import {
 import { useTranslation } from "react-i18next";
 import { confirmDialogAtom } from "$/states/dialogs";
 import { isDarkThemeAtom, lyricLinesAtom } from "$/states/main.ts";
+import type { LyricLine } from "$/types/ttml";
 import styles from "./index.module.css";
+
+function buildPreviewLines(lines: LyricLine[]) {
+	const followIndex = new Map<number, number>();
+	for (let i = 1; i < lines.length; i++) {
+		if (lines[i].isBG && lines[i].followMainTimeline) followIndex.set(i, i - 1);
+	}
+	const bound = new Set(followIndex.values());
+	const rest = lines.map((_, i) => i).filter((i) => !bound.has(i));
+	void rest;
+	return lines;
+}
 
 export const AMLLWrapper = memo(() => {
         const originalLyricLines = useAtomValue(lyricLinesAtom);
@@ -40,13 +52,13 @@ export const AMLLWrapper = memo(() => {
         const playerRef = useRef<LyricPlayerRef>(null);
 
         const lyricLines = useMemo(() => {
-                return structuredClone(
+                return buildPreviewLines(structuredClone(
                         originalLyricLines.lyricLines.map((line) => ({
                                 ...line,
                                 translatedLyric: showTranslationLines ? line.translatedLyric : "",
                                 romanLyric: showRomanLines ? line.romanLyric : "",
                         })),
-                );
+                ));
         }, [originalLyricLines, showTranslationLines, showRomanLines]);
         
         // 倒流拦截：存在音节时间倒流时不渲染 AMLL（其校验会对 startTime>endTime 抛 RangeError），
@@ -115,6 +127,7 @@ export const AMLLWrapper = memo(() => {
                                 styles.amllWrapper,
                                 darkMode && styles.isDark,
                                 swapRomanTranslation && styles.swapSubLines,
+                                styles.bgStack,
                         )}
                 >
                         <LyricPlayer

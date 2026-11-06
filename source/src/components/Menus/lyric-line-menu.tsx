@@ -26,7 +26,7 @@ function canEnableFollow(lines: LyricLine[], lineIndex: number): boolean {
 	if (mainIndex === null) return false;
 	const main = lines[mainIndex];
 	if (!main) return false;
-	return line.words.length === main.words.length;
+	return true;
 }
 
 export const LyricLineMenu = ({ lineIndex, syncMode = false}: { lineIndex: number; syncMode?: boolean; }) => {
@@ -127,12 +127,12 @@ function applyFollowFlag(lines: LyricLine[], index: number, checked: boolean) {
 		if (mainIndex === null) return;
 		const mainLine = lines[mainIndex];
 		if (!mainLine) return;
-		// 分词数量必须与主歌词行完全一致才能启用
-		if (line.words.length !== mainLine.words.length) return;
 		copyTimelineFromMain(line, mainLine);
 		line.followMainTimeline = true;
+		line.followMainLineId = mainLine.id;
 	} else {
 		line.followMainTimeline = false;
+		delete line.followMainLineId;
 	}
 }
 
@@ -348,6 +348,7 @@ function applyFollowFlag(lines: LyricLine[], index: number, checked: boolean) {
 						id: newLyricWord().id,
 					})),
 				};
+				delete newLine.followMainLineId;
 				return [line, newLine];
 			});
 		});

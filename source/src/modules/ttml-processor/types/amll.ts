@@ -23,6 +23,7 @@ export interface AmllLyricLine {
 	startTime: number;
 	endTime: number;
 	followMainTimeline?: boolean;
+	followMainLineId?: string;
 }
 
 export interface AmllMetadata {

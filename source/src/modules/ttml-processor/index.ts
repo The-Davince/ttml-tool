@@ -463,9 +463,12 @@ export function ttmlToAmll(
                 processedLyricLines.length,
         );
         if (followMarkedLines.size > 0) {
-                for (const lineIndex of followMarkedLines) {
+                for (const [lineIndex, info] of followMarkedLines) {
                         const line = processedLyricLines[lineIndex];
-                        if (line) line.followMainTimeline = true;
+                        if (line) {
+                                line.followMainTimeline = true;
+                                if (info.followMainLineId) line.followMainLineId = info.followMainLineId;
+                        }
                 }
         }
 
@@ -516,6 +519,7 @@ function normalizeExportLine(line: AppLyricLine): AmllLyricLine {
                 startTime: line.startTime,
                 endTime: line.endTime,
                 followMainTimeline: line.followMainTimeline,
+                followMainLineId: line.followMainLineId,
         };
 }
 
@@ -593,6 +597,7 @@ export function isLineTimingLyrics(
 }
 
 const FOLLOW_MAIN_TIMELINE_ATTR = "amll:followMainTimeline";
+const FOLLOW_MAIN_LINE_ID_ATTR = "amll:followMainLineId";
 
 interface FollowMarkerElement {
         kind: "line" | "bg";
@@ -622,13 +627,25 @@ function injectFollowTimelineMarkers(
         lines: AmllLyricLine[],
 ): string {
         const elements = scanFollowMarkerElements(ttml);
-        if (elements.length !== lines.length) return ttml;
+        if (elements.length !== lines.length) {
+                console.warn(`injectFollowTimelineMarkers: elements ${elements.length} !== lines ${lines.length}, skipped`);
+                return ttml;
+        }
         const edits: Array<{ pos: number; text: string }> = [];
         for (let i = 0; i < lines.length; i++) {
                 if (!lines[i].followMainTimeline) continue;
                 const el = elements[i];
+                const tag = ttml.slice(el.tagStart, el.tagEnd);
+                const hasTimeline = tag.includes(FOLLOW_MAIN_TIMELINE_ATTR);
+                const hasLineId = tag.includes(FOLLOW_MAIN_LINE_ID_ATTR);
                 const insertPos = el.tagEnd - (el.selfClose ? 2 : 1);
-                edits.push({ pos: insertPos, text: ` ${FOLLOW_MAIN_TIMELINE_ATTR}="true"` });
+                let text = "";
+                if (!hasTimeline) text += ` ${FOLLOW_MAIN_TIMELINE_ATTR}="true"`;
+                if (lines[i].followMainLineId && !hasLineId) {
+                        text += ` ${FOLLOW_MAIN_LINE_ID_ATTR}="${lines[i].followMainLineId}"`;
+                }
+                if (text.length === 0) continue;
+                edits.push({ pos: insertPos, text });
         }
         if (edits.length === 0) return ttml;
         edits.sort((a, b) => b.pos - a.pos);
@@ -642,13 +659,22 @@ function injectFollowTimelineMarkers(
 function extractFollowTimelineMarkers(
         ttml: string,
         lineCount: number,
-): Set<number> {
+): Map<number, { followMainTimeline: boolean; followMainLineId?: string }> {
         const elements = scanFollowMarkerElements(ttml);
-        const marked = new Set<number>();
-        if (elements.length !== lineCount) return marked;
-        for (let i = 0; i < elements.length; i++) {
+        const marked = new Map<number, { followMainTimeline: boolean; followMainLineId?: string }>();
+        const useCount = elements.length === lineCount ? elements.length : Math.min(elements.length, lineCount);
+        if (elements.length !== lineCount) {
+                console.warn(`extractFollowTimelineMarkers: elements ${elements.length} !== lines ${lineCount}, skipped`);
+                if (elements.length === 0) return marked;
+        }
+        for (let i = 0; i < useCount; i++) {
                 const tag = ttml.slice(elements[i].tagStart, elements[i].tagEnd);
-                if (tag.includes(FOLLOW_MAIN_TIMELINE_ATTR)) marked.add(i);
+                if (!tag.includes(FOLLOW_MAIN_TIMELINE_ATTR)) continue;
+                const idMatch = tag.match(/amll:followMainLineId\s*=\s*"([^"]*)"/);
+                marked.set(i, {
+                        followMainTimeline: true,
+                        followMainLineId: idMatch?.[1] || undefined,
+                });
         }
         return marked;
 }

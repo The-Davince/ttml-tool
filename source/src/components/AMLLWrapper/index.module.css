@@ -29,3 +29,15 @@
 .swapSubLines :global(.FmKaba_lyricLine > div:nth-child(3)) {
         order: 2;
 }
+
+.bgStack :global(.FmKaba_bgWrapper) {
+	transition: opacity 300ms ease, filter 300ms ease;
+}
+
+.bgStack :global(.FmKaba_bgWrapperActive) {
+	filter: blur(0);
+}
+
+.bgStack :global(.FmKaba_lyricBgLine) {
+	transition: opacity 300ms ease, filter 300ms ease;
+}

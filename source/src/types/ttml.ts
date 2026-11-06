@@ -84,6 +84,8 @@ export interface LyricLine extends AMLLLyricLine {
 	 * 启用后该行的时间轴会跟随其对应主歌词行
 	 */
 	followMainTimeline?: boolean;
+	followMainLineId?: string;
+	followQueueMode?: "stack" | "replace";
 }
 
 export const newLyricLine = (): LyricLine => ({

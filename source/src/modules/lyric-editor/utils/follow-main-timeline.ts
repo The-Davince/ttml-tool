@@ -8,6 +8,25 @@ export function findMainLineIndex(
 	return null;
 }
 
+export function resolveFollowMainLine(
+	lines: LyricLine[],
+	index: number,
+): { main: LyricLine | null; mainIndex: number | null } {
+	const line = lines[index];
+	if (line?.followMainLineId) {
+		for (let i = 0; i < lines.length; i++) {
+			if (lines[i].id === line.followMainLineId) {
+				return { main: lines[i], mainIndex: i };
+			}
+		}
+		return { main: null, mainIndex: null };
+	}
+	const mainIndex = findMainLineIndex(lines, index);
+	if (mainIndex === null) return { main: null, mainIndex: null };
+	const main = lines[mainIndex] ?? null;
+	return { main, mainIndex };
+}
+
 function remapWordTimeline(word: LyricWord, newStart: number, newEnd: number) {
 	const oldStart = word.startTime;
 	const oldEnd = word.endTime;
@@ -82,24 +101,30 @@ export function copyTimelineFromMain(target: LyricLine, main: LyricLine) {
 
 export function reconcileFollowMainTimeline(state: TTMLLyric) {
 	const lines = state.lyricLines;
+	const seenGroup = new Set<string>();
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
 		if (!line.followMainTimeline) continue;
 		if (!line.isBG && !line.isDuet) continue;
-		const mainIndex = findMainLineIndex(lines, i);
-		if (mainIndex === null) {
+		const { main, mainIndex } = resolveFollowMainLine(lines, i);
+		if (main === null || mainIndex === null) {
 			line.followMainTimeline = false;
+			delete line.followMainLineId;
 			continue;
 		}
-		const main = lines[mainIndex];
-		if (!main) {
+		if (!line.followMainLineId) {
+			line.followMainLineId = main.id;
+		}
+		if (seenGroup.has(main.id)) {
+			const onset = line.startTime;
+			if (onset >= main.startTime && onset < main.endTime) {
+				continue;
+			}
 			line.followMainTimeline = false;
+			delete line.followMainLineId;
 			continue;
 		}
-		if (line.words.length !== main.words.length) {
-			line.followMainTimeline = false;
-			continue;
-		}
+		seenGroup.add(main.id);
 		copyTimelineFromMain(line, main);
 	}
 }
