@@ -41,3 +41,44 @@
 .bgStack :global(.FmKaba_lyricBgLine) {
 	transition: opacity 300ms ease, filter 300ms ease;
 }
+
+.bgLayer {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        pointer-events: none;
+}
+
+.bgGroup {
+        position: relative;
+}
+
+.bgRow {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        white-space: nowrap;
+        color: var(--amll-lp-color, white);
+        font-size: calc(var(--amll-lp-font-size, max(max(5vh, 2.5vw), 12px)) * 0.7);
+        line-height: 1.4;
+        transition: opacity 300ms ease, filter 300ms ease;
+}
+
+.bgRowOff {
+        opacity: 0;
+        filter: blur(8px);
+}
+
+.bgRowOn {
+        opacity: 1;
+        filter: blur(0);
+}
+
+.amllWrapper .bgRow {
+        transition: opacity 300ms ease, filter 300ms ease;
+}
