@@ -30,13 +30,11 @@ import type { LyricLine } from "$/types/ttml";
 import type { OptimizeLyricOptions } from "@applemusic-like-lyrics/core";
 import styles from "./index.module.css";
 
-// amll-core 的 optimizeLyricLines 无条件执行 convertExcessiveBackgroundLines
-// (DEFAULT_OPTIMIZE_OPTIONS 里没有对应开关, 且 convertExcessiveBackgroundLines 选项已 deprecated),
-// 所以不能靠“关选项”保住连续多行 isBG, 只能在预览层自己决定谁进库。
-// 能关的 syncMainAndBackgroundLines 还是关掉: 它会把主行与紧跟的单 BG 的时间改成
-// 双方取 min start / max end, 会改写我们绑的 B 的边界, 库内单槽只留 B 也要避免它的改写。
-// 其余默认 (normalizeSpaces/resetLineTimestamps/cleanUnintentionalOverlaps/tryAdvanceStartTime)
-// 保持开启, 效果和原来一致。
+// amll-core optimizeLyricLines 无条件跑 convertExcessiveBackgroundLines, 无开关可关,
+// 只能靠预览层预处理自控: buildPreviewLines 只把主行和首个被绑 B 塞给 playerLines,
+// 其余 C/D 从裸数组摘出挂在主行 queueRows 上走自渲染浮层, 绕开库的 backgroundVocal 单槽路径.
+// 能关的 syncMainAndBackgroundLines 照关: 它会把主行与紧跟单 BG 取 min start/max end 改写边界,
+// 库里只留 B 也怕它改写. 其余默认保持开启.
 const previewOptimizeOptions: OptimizeLyricOptions = { syncMainAndBackgroundLines: false };
 
 type BgGroup = { main: LyricLine; rows: LyricLine[] };
@@ -109,16 +107,27 @@ function queueVisible(main: LyricLine, line: LyricLine, atMs: number) {
 	const mode = line.followQueueMode ?? "stack";
 	const active = atMs >= line.startTime && atMs <= line.endTime;
 	if (mode === "replace") {
-		if (active) return true;
+		if (active) {
+			for (const row of rows) {
+				if (row.id === line.id) break;
+				if (atMs >= row.startTime && atMs <= row.endTime) return false;
+			}
+			return true;
+		}
 		return Boolean(last && last.id === line.id);
 	}
 	if (active) return true;
 	if (!last || last.id !== line.id) return false;
 	for (let i = 0; i < rows.length - 1; i++) {
 		const prev = rows[i];
-		if (atMs > prev.endTime) return true;
+		if (atMs <= prev.endTime) return false;
 	}
-	return false;
+	return true;
+}
+
+function isMainLine(rowId: string | undefined, mains: LyricLine[]) {
+	if (!rowId) return false;
+	return mains.some((main) => main.id === rowId);
 }
 
 export const AMLLWrapper = memo(() => {
@@ -147,8 +156,8 @@ export const AMLLWrapper = memo(() => {
         const soloRows = useMemo(() => {
                 const one: LyricLine[] = [];
                 for (const line of lyricLines.solo) {
-                        if (one.some((kept) => line.startTime <= kept.endTime && line.endTime >= kept.startTime)) continue;
-                        if (one.length === 0) one.push(line);
+                        if (one.some((kept) => line.startTime < kept.endTime && line.endTime > kept.startTime)) continue;
+                        one.push(line);
                 }
                 return one;
         }, [lyricLines]);
@@ -241,8 +250,9 @@ export const AMLLWrapper = memo(() => {
                                         boxSizing: "content-box",
                                 }}
                                 onLyricLineClick={(evt) => {
-                                        playerRef.current?.lyricPlayer?.resetScroll();
                                         const lineId = (evt.line.getLine() as { id?: string }).id;
+                                        if (!isMainLine(lineId, lyricLines.mains)) return;
+                                        playerRef.current?.lyricPlayer?.resetScroll();
                                         const ms = (lineId ? seekById.get(lineId) : undefined) ?? evt.line.getLine().startTime;
                                         audioEngine.seekMusic(ms / 1000);
                                 }}

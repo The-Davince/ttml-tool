@@ -19,6 +19,14 @@ export function resolveFollowMainLine(
 				return { main: lines[i], mainIndex: i };
 			}
 		}
+		const fallbackIndex = findMainLineIndex(lines, index);
+		if (fallbackIndex !== null) {
+			const fallback = lines[fallbackIndex];
+			if (fallback) {
+				line.followMainLineId = fallback.id;
+				return { main: fallback, mainIndex: fallbackIndex };
+			}
+		}
 		return { main: null, mainIndex: null };
 	}
 	const mainIndex = findMainLineIndex(lines, index);

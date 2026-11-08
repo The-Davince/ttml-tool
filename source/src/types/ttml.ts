@@ -86,6 +86,7 @@ export interface LyricLine extends AMLLLyricLine {
 	followMainTimeline?: boolean;
 	followMainLineId?: string;
 	followQueueMode?: "stack" | "replace";
+	queueRows?: LyricLine[];
 }
 
 export const newLyricLine = (): LyricLine => ({
